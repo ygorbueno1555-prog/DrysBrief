@@ -801,3 +801,14 @@ a.evidence-title { cursor: pointer; }
   color: #fff;
   background: var(--purple);
 }
+
+.header-brief-link {
+  margin-left: auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-3);
+  text-decoration: none;
+  letter-spacing: 0.08em;
+  transition: color 0.15s;
+}
+.header-brief-link:hover { color: var(--blue); }

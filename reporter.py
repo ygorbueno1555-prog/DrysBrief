@@ -249,3 +249,48 @@ async def stream_startup_report(
                 yield text
     except Exception as e:
         yield f"\n\n## Erro na Análise\n{e}"
+
+
+BRIEF_ENTRY_PROMPT = """\
+Você é um analista financeiro sênior. Com base nas pesquisas abaixo sobre {name} ({mode}), \
+gere um briefing matinal CONCISO para um profissional de investimentos.
+
+PESQUISAS:
+{research}
+
+---
+Gere EXATAMENTE neste formato (máximo 6 linhas):
+
+**[TESE MANTIDA | TESE ALTERADA | TESE INVALIDADA | INVESTIR | MONITORAR | PASSAR]** | Confiança: [ALTA | MÉDIA | BAIXA]
+[2-3 frases com fatos concretos: o que mudou recentemente, situação atual, dado principal]
+⚠️ Monitorar: [principal risco ou gatilho de atenção hoje]
+
+Use apenas dados das pesquisas. Se dados insuficientes, diga explicitamente.
+"""
+
+
+async def generate_brief_entry(
+    results: List[Dict], name: str, mode: str
+) -> str:
+    """Generate a concise briefing entry (non-streaming)."""
+    try:
+        client = _get_client()
+    except ValueError as e:
+        return f"**ERRO** | {e}"
+
+    prompt = BRIEF_ENTRY_PROMPT.format(
+        name=name,
+        mode=mode,
+        research=_format_research(results[:8]),
+    )
+
+    try:
+        msg = await client.messages.create(
+            model=_get_model(),
+            max_tokens=300,
+            temperature=0.3,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return msg.content[0].text.strip()
+    except Exception as e:
+        return f"**ERRO** | {e}"

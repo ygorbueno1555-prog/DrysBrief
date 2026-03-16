@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cortiq — Morning Brief</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/briefing.css" />
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+
+<header>
+  <div class="logo">C<span>ORTIQ</span></div>
+  <div class="header-subtitle">Morning Brief</div>
+  <div class="header-nav">
+    <a href="/" class="header-link">← Decision Copilot</a>
+  </div>
+</header>
+
+<div class="brief-container">
+
+  <!-- LEFT: Draft list -->
+  <aside class="brief-sidebar">
+    <div class="brief-sidebar-header">
+      <span class="brief-sidebar-title">BRIEFINGS</span>
+      <button class="btn-generate" id="btn-generate" title="Gerar brief agora">
+        ⟳ Gerar Agora
+      </button>
+    </div>
+    <div id="draft-list" class="draft-list"></div>
+  </aside>
+
+  <!-- RIGHT: Draft detail -->
+  <section class="brief-main">
+
+    <!-- Empty state -->
+    <div class="brief-empty" id="brief-empty">
+      <div class="empty-icon">◈</div>
+      <p>Selecione um briefing ou gere um novo</p>
+      <div class="hint">daily brief · watchlist · approve & send</div>
+    </div>
+
+    <!-- Draft panel -->
+    <div id="draft-panel" class="draft-panel" style="display:none">
+
+      <!-- Draft header -->
+      <div class="draft-header">
+        <div class="draft-header-left">
+          <div id="draft-status-badge" class="status-badge draft">DRAFT</div>
+          <input id="draft-subject" class="draft-subject-input" type="text" />
+        </div>
+        <div class="draft-actions">
+          <button class="btn-edit" id="btn-edit">Editar</button>
+          <button class="btn-discard" id="btn-discard">Descartar</button>
+          <button class="btn-send" id="btn-send">Aprovar e Enviar →</button>
+        </div>
+      </div>
+
+      <!-- Recipients -->
+      <div class="draft-recipients">
+        <span class="recipients-label">Para:</span>
+        <input id="draft-recipients" class="recipients-input" type="text"
+               placeholder="email1@empresa.com, email2@empresa.com" />
+        <button class="btn-save-recipients" id="btn-save-recipients">Salvar</button>
+      </div>
+
+      <!-- Content: view mode -->
+      <div id="draft-preview" class="draft-preview"></div>
+
+      <!-- Content: edit mode -->
+      <textarea id="draft-textarea" class="draft-textarea" style="display:none"
+                placeholder="Edite o conteúdo do brief em Markdown..."></textarea>
+
+      <!-- Sent info -->
+      <div id="draft-sent-info" class="draft-sent-info" style="display:none"></div>
+
+    </div>
+
+    <!-- Generating overlay -->
+    <div id="generating-overlay" class="generating-overlay" style="display:none">
+      <div class="generating-spinner"></div>
+      <div class="generating-text">Gerando briefing da watchlist...</div>
+      <div class="generating-sub" id="generating-sub">Pesquisando ativos e startups em paralelo</div>
+    </div>
+
+  </section>
+</div>
+
+<script src="/static/briefing.js"></script>
+</body>
+</html>

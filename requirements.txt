@@ -3,3 +3,5 @@ uvicorn[standard]==0.30.6
 python-dotenv==1.0.1
 tavily-python==0.3.9
 anthropic>=0.34.0
+apscheduler==3.10.4
+resend==2.0.0
