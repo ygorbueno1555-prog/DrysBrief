@@ -1,16 +1,26 @@
 {
-  "equity": [
-    {"ticker": "VALE3", "thesis": "Recuperação da demanda chinesa por minério de ferro"},
-    {"ticker": "PETR4", "thesis": ""},
-    {"ticker": "ITUB4", "thesis": ""},
-    {"ticker": "WEGE3", "thesis": ""},
-    {"ticker": "BBDC4", "thesis": ""}
-  ],
-  "startups": [
-    {"name": "Nubank", "thesis": "Banco digital líder na América Latina"},
-    {"name": "Creditas", "thesis": "Crédito com garantia B2C no Brasil"},
-    {"name": "Pagar.me", "thesis": ""}
-  ],
-  "recipients": [],
-  "briefing_hour": 7
+  "briefing_hour": 7,
+  "portfolios": [
+    {
+      "id": "carteira-principal",
+      "manager_name": "Gestor Principal",
+      "portfolio_name": "Carteira Principal",
+      "mandate": "Long-only Brasil com foco em large caps e plataformas financeiras.",
+      "recipients": [],
+      "alert_recipients": [],
+      "auto_send_alerts": false,
+      "equity": [
+        {"ticker": "VALE3", "thesis": "Recuperação da demanda chinesa por minério de ferro"},
+        {"ticker": "PETR4", "thesis": ""},
+        {"ticker": "ITUB4", "thesis": ""},
+        {"ticker": "WEGE3", "thesis": ""},
+        {"ticker": "BBDC4", "thesis": ""}
+      ],
+      "startups": [
+        {"name": "Nubank", "thesis": "Banco digital líder na América Latina"},
+        {"name": "Creditas", "thesis": "Crédito com garantia B2C no Brasil"},
+        {"name": "Pagar.me", "thesis": ""}
+      ]
+    }
+  ]
 }

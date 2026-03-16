@@ -273,8 +273,9 @@ PESQUISAS:
 Gere EXATAMENTE neste formato (máximo 6 linhas):
 
 **[TESE MANTIDA | TESE ALTERADA | TESE INVALIDADA | INVESTIR | MONITORAR | PASSAR]** | Confiança: [ALTA | MÉDIA | BAIXA]
+Alerta hoje: [VERDE | AMARELO | VERMELHO]
 [2-3 frases com fatos concretos: o que mudou recentemente, situação atual, dado principal]
-⚠️ Monitorar: [principal risco ou gatilho de atenção hoje]
+Gatilho: [principal risco/evento a observar hoje, ou "sem alerta crítico"]
 
 Use apenas dados das pesquisas. Se dados insuficientes, diga explicitamente.
 """

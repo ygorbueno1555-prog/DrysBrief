@@ -93,6 +93,23 @@
   margin-bottom: 5px;
   line-height: 1.3;
 }
+.draft-item-meta {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-bottom: 6px;
+  line-height: 1.3;
+}
+.draft-item-alerts {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--amber);
+  background: var(--amber-dim);
+  border: 1px solid var(--amber-border);
+  font-family: 'JetBrains Mono', monospace;
+}
 .draft-item-status {
   font-family: 'JetBrains Mono', monospace;
   font-size: 9px;
@@ -250,6 +267,27 @@
   transition: color 0.15s, border-color 0.15s;
 }
 .btn-save-recipients:hover { color: var(--blue); border-color: var(--blue-border); }
+
+.draft-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.draft-meta-item {
+  font-size: 11px;
+  color: var(--text-3);
+  font-family: 'JetBrains Mono', monospace;
+  line-height: 1.4;
+}
+
+.draft-meta-item strong {
+  color: var(--text);
+  font-weight: 600;
+}
 
 /* ── Preview ── */
 .draft-preview {

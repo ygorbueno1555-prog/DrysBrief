@@ -1,8 +1,8 @@
 # CORTIQ Decision Copilot
 
-> Um agente de research financeiro que investiga teses de investimento em equities e startups, busca evidências na web, detecta lacunas, aprofunda a pesquisa e gera recomendações acionáveis com trilha de evidências verificável.
+> Um agente de research financeiro com dois workflows: análise on-demand para equities e startups, e Portfolio Watch proativo para gerar relatórios por gestor/carteira.
 
-**[→ Demo ao vivo](https://drysbrief-production.up.railway.app/)**
+**[→ Demo ao vivo](https://cortiq-decisioncopilot.up.railway.app/)**
 
 ---
 
@@ -23,7 +23,7 @@ Este sistema faz:
 
 ---
 
-## Modos
+## Workflows
 
 ### ⬡ Equity — Validação de Tese
 Analisa um ativo brasileiro (VALE3, PETR4, ITUB4...) e retorna:
@@ -42,6 +42,15 @@ Gera um VC memo completo para qualquer startup:
 - Red flags e gatilhos de invalidação
 - Tese de investimento (upside vs. risco)
 - Próximos passos de diligência
+
+### ⟳ Portfolio Watch — Relatórios por Gestor
+Gera relatórios diários por portfolio configurado em `watchlist.json`:
+- Um draft por gestor/carteira
+- Lista de equities e startups monitorados para aquele portfolio
+- Alertas automáticos quando o nível de risco piora ou o veredito muda
+- Aprovação humana antes de enviar por email
+- Destinatários por carteira
+- Compatível com o formato antigo de watchlist global
 
 ---
 
@@ -91,6 +100,8 @@ Cada análise salva em `artifacts/{mode}_{key}_{timestamp}/analysis.json`:
 | Gap Detection | Claude Haiku |
 | Backend | FastAPI + SSE |
 | Frontend | HTML/CSS/JS vanilla |
+| Scheduler | APScheduler |
+| Email | Resend |
 | Deploy | Railway |
 
 ---
@@ -98,8 +109,8 @@ Cada análise salva em `artifacts/{mode}_{key}_{timestamp}/analysis.json`:
 ## Rodando localmente
 
 ```bash
-git clone https://github.com/ygorbueno1555-prog/DrysBrief
-cd DrysBrief
+git clone https://github.com/ygorbueno1555-prog/cortiq-decisioncopilot
+cd cortiq-decisioncopilot
 
 pip install -r requirements.txt
 
@@ -116,14 +127,39 @@ uvicorn main:app --reload
 ANTHROPIC_API_KEY=   # Chave da API Claude (obrigatório)
 ANTHROPIC_MODEL=     # Padrão: claude-sonnet-4-6
 TAVILY_API_KEY=      # Chave da API Tavily (obrigatório)
+RESEND_API_KEY=      # Chave da API Resend (opcional)
+BRIEF_FROM_EMAIL=    # Remetente do Portfolio Watch
+```
+
+## Schema de Portfolio
+
+O `watchlist.json` pode definir múltiplas carteiras:
+
+```json
+{
+  "briefing_hour": 7,
+  "portfolios": [
+    {
+      "id": "carteira-principal",
+      "manager_name": "Gestor Principal",
+      "portfolio_name": "Carteira Principal",
+      "mandate": "Long-only Brasil",
+      "recipients": ["gestor@fundo.com"],
+      "alert_recipients": ["alertas@fundo.com"],
+      "auto_send_alerts": false,
+      "equity": [{"ticker": "VALE3", "thesis": ""}],
+      "startups": [{"name": "Nubank", "thesis": ""}]
+    }
+  ]
+}
 ```
 
 ---
 
 ## Próximos passos
 
-- [ ] Dados estruturados via yfinance (P/E, EBITDA, preço real)
-- [ ] Monitoramento de tese com alertas automáticos
+- [x] Dados estruturados via yfinance (P/E, EBITDA, preço real)
+- [x] Monitoramento de tese com alertas automáticos
 - [ ] Comparação lado a lado entre dois ativos
 - [ ] Export PDF do relatório
 

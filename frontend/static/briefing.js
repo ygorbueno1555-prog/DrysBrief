@@ -41,6 +41,8 @@ function renderDraftList(drafts) {
          onclick="openDraft('${d.id}')">
       <div class="draft-item-date">${d.date || d.id}</div>
       <div class="draft-item-subject">${truncate(d.subject || '', 38)}</div>
+      <div class="draft-item-meta">${truncate(formatDraftMeta(d), 40)}</div>
+      ${d.alert_count ? `<div class="draft-item-alerts">${d.alert_count} alerta${d.alert_count > 1 ? 's' : ''}</div>` : ''}
       <div class="draft-item-status ${d.status}">${statusLabel(d.status)}</div>
     </div>
   `).join('');
@@ -70,6 +72,7 @@ function renderDraft(draft) {
   $('draft-recipients').value = (draft.recipients || []).join(', ');
   $('draft-preview').innerHTML = marked.parse(draft.content || '');
   $('draft-textarea').value = draft.content || '';
+  renderDraftMeta(draft);
 
   // Status badge
   const badge = $('draft-status-badge');
@@ -209,8 +212,11 @@ async function generateBrief() {
       $('generating-overlay').style.display = 'none';
       $('btn-generate').disabled = false;
       await loadDraftList();
-      await openDraft(data.id);
-      showToast('Relatório gerado!', 'green');
+      if (data.primary_id) await openDraft(data.primary_id);
+      showToast(
+        data.count > 1 ? `${data.count} relatórios gerados!` : 'Relatório gerado!',
+        'green'
+      );
     } else {
       throw new Error('Falha na geração');
     }
@@ -225,6 +231,42 @@ async function generateBrief() {
 // ── Utils ─────────────────────────────────────────────────
 function truncate(s, n) {
   return s.length > n ? s.slice(0, n) + '…' : s;
+}
+
+function formatDraftMeta(draft) {
+  const parts = [];
+  if (draft.manager_name) parts.push(draft.manager_name);
+  if (draft.portfolio_name && draft.portfolio_name !== draft.manager_name) {
+    parts.push(draft.portfolio_name);
+  }
+  return parts.join(' · ') || 'Sem gestor definido';
+}
+
+function renderDraftMeta(draft) {
+  const el = $('draft-meta');
+  const parts = [];
+  if (draft.manager_name) parts.push(`Gestor: <strong>${escHtml(draft.manager_name)}</strong>`);
+  if (draft.portfolio_name) parts.push(`Portfolio: <strong>${escHtml(draft.portfolio_name)}</strong>`);
+  if (draft.mandate) parts.push(`Mandato: <span>${escHtml(draft.mandate)}</span>`);
+  if (draft.analyses?.length) parts.push(`${draft.analyses.length} ativos monitorados`);
+  if (draft.alerts?.length) parts.push(`${draft.alerts.length} alertas automaticos`);
+
+  if (!parts.length) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+
+  el.style.display = 'flex';
+  el.innerHTML = parts.map(p => `<span class="draft-meta-item">${p}</span>`).join('');
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function showToast(msg, type = 'blue') {

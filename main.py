@@ -131,7 +131,9 @@ class DraftUpdate(BaseModel):
 def list_drafts():
     drafts = load_drafts()
     return [{"id": d["id"], "date": d.get("date"), "status": d.get("status"),
-             "subject": d.get("subject"), "generated_at": d.get("generated_at")}
+             "subject": d.get("subject"), "generated_at": d.get("generated_at"),
+             "portfolio_id": d.get("portfolio_id"), "portfolio_name": d.get("portfolio_name"),
+             "manager_name": d.get("manager_name"), "alert_count": len(d.get("alerts", []))}
             for d in drafts]
 
 
@@ -188,10 +190,19 @@ def discard_draft(draft_id: str):
 
 
 @app.post("/api/briefing/run")
-async def trigger_briefing():
-    """Manually trigger a briefing generation."""
-    draft = await run_watchlist_briefing()
-    return {"ok": True, "id": draft["id"]}
+async def trigger_briefing(portfolio_id: Optional[str] = None):
+    """Manually trigger one or more portfolio briefings."""
+    try:
+        drafts = await run_watchlist_briefing(portfolio_id=portfolio_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    primary = drafts[0] if drafts else None
+    return {
+        "ok": True,
+        "count": len(drafts),
+        "ids": [draft["id"] for draft in drafts],
+        "primary_id": primary["id"] if primary else None,
+    }
 
 
 @app.get("/api/watchlist")
