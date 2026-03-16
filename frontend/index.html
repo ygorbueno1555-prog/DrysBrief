@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cortiq Decision Copilot</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+
+<!-- ── HEADER ──────────────────────────────────────────── -->
+<header>
+  <div class="logo">C<span>ORTIQ</span></div>
+  <div class="header-subtitle">Decision Copilot</div>
+  <div class="header-badge">ALPHA</div>
+</header>
+
+<!-- ── CONTAINER ───────────────────────────────────────── -->
+<div class="container">
+
+  <!-- Mode tabs -->
+  <div class="mode-tabs">
+    <button class="mode-tab active" data-mode="equity">⬡ Equity</button>
+    <button class="mode-tab" data-mode="startup">◈ Startup</button>
+  </div>
+
+  <!-- Panels -->
+  <div class="panels">
+
+    <!-- ── INPUT PANEL ──────────────────────────────────── -->
+    <aside class="input-panel">
+
+      <!-- EQUITY FORM -->
+      <div id="equity-form" class="form-section">
+        <div class="form-title">Equity Analysis</div>
+
+        <div class="field">
+          <label>Ativo</label>
+          <input id="ticker" type="text" placeholder="VALE3, PETR4, ITUB4..." autocomplete="off" />
+        </div>
+
+        <div class="field">
+          <label>Tese atual <span class="opt">— opcional</span></label>
+          <textarea id="thesis" placeholder="Ex: VALE3 se beneficia da recuperação da demanda chinesa por minério de ferro..."></textarea>
+        </div>
+
+        <div class="field">
+          <label>Mandato da carteira <span class="opt">— opcional</span></label>
+          <input id="mandate" type="text" placeholder="Ex: long-only, value, 3-5 anos..." />
+        </div>
+
+        <button class="btn-analyze" id="btn-equity">ANALISAR →</button>
+      </div>
+
+      <!-- STARTUP FORM -->
+      <div id="startup-form" class="form-section" style="display:none;">
+        <div class="form-title">Startup Due Diligence</div>
+
+        <div class="field">
+          <label>Startup</label>
+          <input id="startup-name" type="text" placeholder="Nome da empresa..." autocomplete="off" />
+        </div>
+
+        <div class="field">
+          <label>Website <span class="opt">— opcional</span></label>
+          <input id="startup-url" type="text" placeholder="https://..." />
+        </div>
+
+        <div class="field">
+          <label>Tese de investimento <span class="opt">— opcional</span></label>
+          <textarea id="startup-thesis" placeholder="Ex: Único CRM conversacional nativo para WhatsApp no Brasil, targeting PMEs..."></textarea>
+        </div>
+
+        <button class="btn-analyze" id="btn-startup">ANALISAR →</button>
+      </div>
+
+      <!-- STATUS / QUERIES -->
+      <div id="status-panel" class="status-panel">
+        <div class="status-row">
+          <div class="status-dot pulse" id="status-dot"></div>
+          <div class="status-text" id="status-text">Iniciando...</div>
+        </div>
+        <div class="queries-list" id="queries-list"></div>
+      </div>
+
+    </aside>
+
+    <!-- ── OUTPUT PANEL ──────────────────────────────────── -->
+    <section class="output-panel">
+
+      <!-- Verdict bar -->
+      <div class="verdict-bar" id="verdict-bar">
+        <div class="verdict-tag blue" id="verdict-tag">ANALISANDO</div>
+        <div class="verdict-meta" id="verdict-meta"></div>
+        <div class="verdict-time" id="verdict-time"></div>
+      </div>
+
+      <!-- Empty state -->
+      <div class="empty-state" id="empty-state">
+        <div class="empty-icon">◈</div>
+        <p>Selecione o modo, preencha os dados e clique em Analisar</p>
+        <div class="hint">equity · startup · auto-research · decision layer</div>
+      </div>
+
+      <!-- Report -->
+      <div class="report-wrapper" id="report-wrapper">
+        <div class="report-content" id="report-content"></div>
+      </div>
+
+    </section>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
