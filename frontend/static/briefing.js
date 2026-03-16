@@ -1,5 +1,5 @@
 /* ============================================================
-   CORTIQ MORNING BRIEF — Review & Approve UI
+   CORTIQ PORTFOLIO WATCH — Review & Approve UI
    ============================================================ */
 
 let currentDraftId = null;
@@ -33,7 +33,7 @@ async function loadDraftList() {
 function renderDraftList(drafts) {
   const el = $('draft-list');
   if (!drafts.length) {
-    el.innerHTML = '<div class="draft-list-empty">Nenhum briefing gerado ainda</div>';
+    el.innerHTML = '<div class="draft-list-empty">Nenhum relatório gerado ainda</div>';
     return;
   }
   el.innerHTML = drafts.map(d => `
@@ -193,7 +193,7 @@ async function generateBrief() {
     'Pesquisando ativos e startups em paralelo...',
     'Detectando lacunas de cobertura...',
     'Gerando resumos com Claude...',
-    'Montando o brief matinal...',
+    'Montando o relatório da carteira...',
   ];
   let i = 0;
   const interval = setInterval(() => {
@@ -210,7 +210,7 @@ async function generateBrief() {
       $('btn-generate').disabled = false;
       await loadDraftList();
       await openDraft(data.id);
-      showToast('Brief gerado!', 'green');
+      showToast('Relatório gerado!', 'green');
     } else {
       throw new Error('Falha na geração');
     }

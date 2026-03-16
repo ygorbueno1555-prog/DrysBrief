@@ -62,7 +62,7 @@ def _build_markdown(analyses: list, date_str: str) -> str:
     startups  = [a for a in analyses if a["mode"] == "startup"]
     attention = [a for a in analyses if a["color"] in ("amber", "red")]
 
-    lines = [f"# Cortiq Morning Brief — {date_str}", ""]
+    lines = [f"# Cortiq Portfolio Watch — {date_str}", ""]
 
     if equities:
         lines += ["## 📊 Watchlist — Equities", ""]
@@ -84,7 +84,7 @@ def _build_markdown(analyses: list, date_str: str) -> str:
 
     lines += [
         "---",
-        f"*Gerado automaticamente às 07:00 · Cortiq Decision Copilot*",
+        f"*Gerado automaticamente · Cortiq Portfolio Watch*",
     ]
     return "\n".join(lines)
 
@@ -116,7 +116,7 @@ async def run_watchlist_briefing() -> dict:
         "date": date_str,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "status": "draft",
-        "subject": f"Cortiq Morning Brief — {date_str}",
+        "subject": f"Cortiq Portfolio Watch — {date_str}",
         "content": content,
         "analyses": list(analyses),
         "recipients": watchlist.get("recipients", []),

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cortiq — Morning Brief</title>
+  <title>Cortiq — Portfolio Watch</title>
   <link rel="stylesheet" href="/static/style.css" />
   <link rel="stylesheet" href="/static/briefing.css" />
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -12,7 +12,7 @@
 
 <header>
   <div class="logo">C<span>ORTIQ</span></div>
-  <div class="header-subtitle">Morning Brief</div>
+  <div class="header-subtitle">Portfolio Watch</div>
   <div class="header-nav">
     <a href="/" class="header-link">← Decision Copilot</a>
   </div>
@@ -23,8 +23,8 @@
   <!-- LEFT: Draft list -->
   <aside class="brief-sidebar">
     <div class="brief-sidebar-header">
-      <span class="brief-sidebar-title">BRIEFINGS</span>
-      <button class="btn-generate" id="btn-generate" title="Gerar brief agora">
+      <span class="brief-sidebar-title">RELATÓRIOS</span>
+      <button class="btn-generate" id="btn-generate" title="Gerar relatório agora">
         ⟳ Gerar Agora
       </button>
     </div>
@@ -37,8 +37,8 @@
     <!-- Empty state -->
     <div class="brief-empty" id="brief-empty">
       <div class="empty-icon">◈</div>
-      <p>Selecione um briefing ou gere um novo</p>
-      <div class="hint">daily brief · watchlist · approve & send</div>
+      <p>Selecione um relatório ou gere um novo</p>
+      <div class="hint">watchlist diária · auto-research · aprovar e enviar</div>
     </div>
 
     <!-- Draft panel -->
@@ -80,7 +80,7 @@
     <!-- Generating overlay -->
     <div id="generating-overlay" class="generating-overlay" style="display:none">
       <div class="generating-spinner"></div>
-      <div class="generating-text">Gerando briefing da watchlist...</div>
+      <div class="generating-text">Gerando relatório da watchlist...</div>
       <div class="generating-sub" id="generating-sub">Pesquisando ativos e startups em paralelo</div>
     </div>
 
