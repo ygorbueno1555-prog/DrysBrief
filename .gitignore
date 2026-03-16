@@ -3,6 +3,8 @@
 __pycache__/
 *.pyc
 .DS_Store
+node_modules/
 artifacts/
 search_cache/
 drafts/
+demo-artifacts/videos/
