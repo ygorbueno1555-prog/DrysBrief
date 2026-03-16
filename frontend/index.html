@@ -84,6 +84,15 @@
         <div class="queries-list" id="queries-list"></div>
       </div>
 
+      <!-- HISTÓRICO -->
+      <div id="history-panel" class="history-panel">
+        <div class="history-header">
+          <span class="history-title">HISTÓRICO</span>
+          <button class="history-clear" id="btn-clear-history" title="Limpar histórico">×</button>
+        </div>
+        <div class="history-list" id="history-list"></div>
+      </div>
+
     </aside>
 
     <!-- ── OUTPUT PANEL ──────────────────────────────────── -->
@@ -101,6 +110,18 @@
         <div class="empty-icon">◈</div>
         <p>Selecione o modo, preencha os dados e clique em Analisar</p>
         <div class="hint">equity · startup · auto-research · decision layer</div>
+      </div>
+
+      <!-- Cache hint banner -->
+      <div id="cache-hint" class="cache-hint" style="display:none;">
+        <div class="cache-hint-left">
+          <span class="cache-icon">🕐</span>
+          <span id="cache-hint-text"></span>
+        </div>
+        <div class="cache-hint-actions">
+          <button class="cache-btn-view" id="btn-view-cache">Ver análise anterior</button>
+          <button class="cache-btn-rerun" id="btn-rerun">Reanalisar</button>
+        </div>
       </div>
 
       <!-- Report -->

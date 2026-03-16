@@ -1,156 +1,132 @@
-# Cortiq Decision Copilot
+# CORTIQ Decision Copilot
 
-> Camada de decisão para profissionais de investimento — fecha o loop entre pesquisa e ação.
+> Um agente de research financeiro que investiga teses de investimento em equities e startups, busca evidências na web, detecta lacunas, aprofunda a pesquisa e gera recomendações acionáveis com trilha de evidências verificável.
 
-O Credit Guide da Cortiq agrega dados e análise. O Decision Copilot transforma esse conhecimento em **recomendação rastreável e operável** — com trilha de evidências, gatilhos de invalidação e impacto no portfólio.
-
----
-
-## O que faz
-
-**Modo Equity** — valida se uma tese de investimento continua válida:
-1. Pesquisa automaticamente 6 ângulos (resultados, valuation, catalisadores, riscos, notícias, tese)
-2. Processa com DeepSeek via análise fundamentalista
-3. Entrega: `TESE MANTIDA / ALTERADA / INVALIDADA` + ação recomendada + trilha de evidências
-
-**Modo Startup** — due diligence automatizada para angel investing / VC:
-1. Pesquisa 7 dimensões (time, funding, mercado, concorrentes, tração, notícias, red flags)
-2. Gera VC memo estruturado com DeepSeek
-3. Entrega: `INVESTIR / MONITORAR / PASSAR` + confiança + gatilhos de invalidação
-
-Tudo em **tempo real via SSE** — você vê cada etapa da pesquisa acontecendo.
+**[→ Demo ao vivo](https://drysbrief-production.up.railway.app/)**
 
 ---
 
-## Stack
+## Por que isso é um agente, não um wrapper
 
-```
-Python · FastAPI · SSE · Tavily (research) · DeepSeek (synthesis) · HTML/CSS/JS
-```
+A maioria dos "AI tools" faz: *input → LLM → output*.
 
----
+Este sistema faz:
 
-## Como rodar (local)
-
-```bash
-# 1. Clone
-git clone https://github.com/SEU_USER/cortiq-copilot.git
-cd cortiq-copilot
-
-# 2. Instale dependências
-pip install -r requirements.txt
-
-# 3. Configure as chaves
-cp .env.example .env
-# Edite .env:
-# TAVILY_API_KEY=tvly-...
-# DEEPSEEK_API_KEY=sk-...
-
-# 4. Suba o servidor
-uvicorn main:app --host 0.0.0.0 --port 8000
-
-# 5. Abra
-# http://localhost:8000
-```
+1. **Recebe** a tese ou empresa a analisar
+2. **Gera** queries de pesquisa especializadas automaticamente
+3. **Pesquisa** a web em paralelo (Tavily, search_depth=advanced)
+4. **Detecta lacunas** — usa Claude Haiku para identificar o que está faltando
+5. **Aprofunda** com queries de follow-up direcionadas
+6. **Sintetiza** com Claude, citando fontes numeradas
+7. **Compara** com análises anteriores: "o que mudou desde a última análise?"
+8. **Salva** um artefato JSON estruturado por análise
 
 ---
 
-## Deploy (Railway — gratuito)
+## Modos
 
-1. Fork no GitHub
-2. Novo projeto em [railway.app](https://railway.app) → Deploy from GitHub
-3. Adicione as variáveis: `TAVILY_API_KEY` e `DEEPSEEK_API_KEY`
-4. Deploy automático
+### ⬡ Equity — Validação de Tese
+Analisa um ativo brasileiro (VALE3, PETR4, ITUB4...) e retorna:
+- **VEREDITO**: TESE MANTIDA | TESE ALTERADA | TESE INVALIDADA
+- Ação recomendada (COMPRAR | MANTER | REDUZIR | VENDER)
+- O que mudou desde a última análise
+- Catalisadores (30–90 dias)
+- Riscos e gatilhos de invalidação
+- Trilha de evidências com links clicáveis
+- Sugestões de comparação (Explorar Também)
 
----
-
-## Endpoints
-
-| Método | Rota | Descrição |
-|--------|------|-----------|
-| GET | `/` | Frontend |
-| GET | `/health` | Health check |
-| GET | `/analyze/equity?ticker=VALE3&thesis=...&mandate=...` | SSE — Equity |
-| GET | `/analyze/startup?name=...&url=...&thesis=...` | SSE — Startup |
-
----
-
-## Eventos SSE
-
-| Evento | Payload | Descrição |
-|--------|---------|-----------|
-| `status` | string | Etapa atual da pesquisa |
-| `queries` | JSON array | Queries sendo executadas |
-| `chunk` | string | Fragmento do relatório (streaming) |
-| `done` | string | Análise concluída |
-| `error` | string | Erro ocorrido |
+### ◈ Startup — Due Diligence
+Gera um VC memo completo para qualquer startup:
+- **VEREDITO**: INVESTIR | MONITORAR | PASSAR
+- Time, mercado, tração, concorrentes
+- Red flags e gatilhos de invalidação
+- Tese de investimento (upside vs. risco)
+- Próximos passos de diligência
 
 ---
 
 ## Arquitetura
 
 ```
-Input (ticker ou startup)
-    ↓
-agent.py: build_queries() → 6-7 queries específicas por modo
-    ↓
-researcher.py: Tavily API → 5 resultados por query (search_depth: advanced)
-    ↓
-reporter.py: DeepSeek streaming → relatório estruturado em markdown
-    ↓
-main.py: SSE → frontend em tempo real
+main.py          FastAPI + SSE streaming
+  └── agent.py   Orquestrador: queries → gap check → follow-up → síntese
+        ├── researcher.py   Tavily web search + deduplicação + source typing
+        └── reporter.py     Claude streaming + prompts estruturados
+```
+
+### Fluxo SSE (Server-Sent Events)
+```
+status          → atualização de progresso
+queries         → lista de queries iniciais geradas
+followup_queries→ queries de follow-up após gap detection
+sources         → lista de fontes para linkagem de citações [N]
+chunk           → fragmentos do relatório em tempo real
+done            → análise concluída
+```
+
+### Artefatos gerados
+Cada análise salva em `artifacts/{mode}_{key}_{timestamp}/analysis.json`:
+```json
+{
+  "mode": "equity",
+  "key": "VALE3",
+  "queries": [...],
+  "followup_queries": [...],
+  "sources": [{"title", "url", "source_type"}],
+  "verdict": "TESE MANTIDA",
+  "confidence": "MÉDIA",
+  "report": "...",
+  "generated_at": "2025-01-15T10:30:00Z"
+}
 ```
 
 ---
 
-## Output — Equity
+## Stack
 
+| Componente | Tecnologia |
+|---|---|
+| LLM | Claude (Anthropic API) |
+| Web Research | Tavily (`search_depth=advanced`) |
+| Gap Detection | Claude Haiku |
+| Backend | FastAPI + SSE |
+| Frontend | HTML/CSS/JS vanilla |
+| Deploy | Railway |
+
+---
+
+## Rodando localmente
+
+```bash
+git clone https://github.com/ygorbueno1555-prog/DrysBrief
+cd DrysBrief
+
+pip install -r requirements.txt
+
+cp .env.example .env
+# Edite .env com suas chaves
+
+uvicorn main:app --reload
+# Acesse http://localhost:8000
 ```
-## VEREDITO
-**TESE MANTIDA**
-Confiança: ALTA
-Racional: Fundamentos operacionais seguem robustos apesar de baixas contábeis pontuais.
 
-## AÇÃO RECOMENDADA
-**MANTER**
-EBITDA proforma +17% no 4T25 confirma a tese de geração de caixa...
+## Variáveis de ambiente
 
-## O QUE MUDOU
-→ Prejuízo líquido de US$3,8bi majoritariamente de baixas contábeis não recorrentes
-→ EBITDA proforma avançou +17% para US$4,8bi no 4T25
-→ Valuation considerado "fairly priced" após rali recente
-
-## CATALISADORES (30-90 dias)
-→ Novos estímulos econômicos da China impactando preço do minério
-→ Continuação do fluxo para ativos reais e mercados emergentes
-
-## RISCOS E GATILHOS DE INVALIDAÇÃO
-→ Risco China: queda sustentada abaixo de US$100/ton invalida a tese
-→ Risco regulatório: novas exigências pós-Mariana afetando fluxo de caixa
-
-## TRILHA DE EVIDÊNCIAS
-→ EBITDA 4T25: US$4,8bi (+17% vs. estimativas) — Valor Econômico
-→ Valuation: preço justo R$76,83 vs. cotação R$78,3 — BTG Research
+```env
+ANTHROPIC_API_KEY=   # Chave da API Claude (obrigatório)
+ANTHROPIC_MODEL=     # Padrão: claude-sonnet-4-6
+TAVILY_API_KEY=      # Chave da API Tavily (obrigatório)
 ```
 
 ---
 
-## Output — Startup
+## Próximos passos
 
-```
-## VEREDITO
-**INVESTIR**
-Confiança: MÉDIA
-Racional: Time forte, mercado validado, mas métricas de tração ainda incipientes.
+- [ ] Dados estruturados via yfinance (P/E, EBITDA, preço real)
+- [ ] Monitoramento de tese com alertas automáticos
+- [ ] Comparação lado a lado entre dois ativos
+- [ ] Export PDF do relatório
 
-## TIME
-→ Força: founders com experiência prévia em fintech e saídas anteriores
-→ Gap: ausência de perfil comercial sênior no C-level
+---
 
-## MERCADO
-→ TAM estimado: R$4,2bi (crédito consignado privado)
-→ Crescimento: 28% a.a. nos últimos 3 anos
-→ Timing: No tempo certo
-
-...
-```
+*Construído como portfolio para demonstrar capacidade de construir AI agents aplicados a finanças.*

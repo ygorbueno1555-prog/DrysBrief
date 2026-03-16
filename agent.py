@@ -1,10 +1,14 @@
-"""agent.py — Cortiq Decision Copilot
-Orchestrates multi-step research + report generation for equity and startup analysis.
+"""agent.py — Cortiq Decision Copilot v2
+Orchestrates multi-step research with gap detection and follow-up queries.
 """
 import json
-from typing import AsyncGenerator, Tuple
+import os
+import time
+import re
+from datetime import datetime
+from typing import AsyncGenerator, Tuple, List, Dict
 
-from researcher import search_topic
+from researcher import search_topic, deduplicate_results
 from reporter import stream_equity_report, stream_startup_report
 
 
@@ -31,8 +35,71 @@ def build_startup_queries(name: str, url: str, thesis: str) -> list[str]:
     ]
 
 
+async def _gap_check(topic: str, mode: str, results: List[Dict]) -> List[str]:
+    """Use Claude Haiku to identify research gaps and return follow-up queries."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return []
+
+    try:
+        from anthropic import AsyncAnthropic
+        client = AsyncAnthropic(api_key=api_key)
+
+        # Summarize what we have
+        found = "\n".join(
+            f"- {r['title']}: {r['content'][:80]}"
+            for r in results[:12]
+        )
+
+        if mode == "equity":
+            gaps_to_check = "financials, valuation, catalysts, risks, management changes"
+        else:
+            gaps_to_check = "team experience, funding/traction, market size, competitors, red flags"
+
+        prompt = (
+            f"Research topic: {topic} ({mode} analysis).\n"
+            f"Coverage needed: {gaps_to_check}\n"
+            f"Evidence found so far:\n{found}\n\n"
+            f"Identify 2 specific research gaps and generate targeted follow-up queries in Portuguese.\n"
+            f"Respond ONLY with a JSON array of 2 strings: [\"query1\", \"query2\"]"
+        )
+
+        msg = await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=150,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = msg.content[0].text.strip()
+        match = re.search(r'\[.*?\]', text, re.DOTALL)
+        if match:
+            queries = json.loads(match.group())
+            if isinstance(queries, list):
+                return [q for q in queries if isinstance(q, str)][:2]
+    except Exception:
+        pass
+    return []
+
+
+def _save_artifact(data: dict) -> None:
+    """Save analysis artifact as JSON."""
+    try:
+        mode = data.get("mode", "unknown")
+        key = re.sub(r'[^a-zA-Z0-9_-]', '_', data.get("key", "unknown"))[:30]
+        ts = int(time.time())
+        dir_path = os.path.join("artifacts", f"{mode}_{key}_{ts}")
+        os.makedirs(dir_path, exist_ok=True)
+        with open(os.path.join(dir_path, "analysis.json"), "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
 async def run_equity_analysis(
-    ticker: str, thesis: str = "", mandate: str = ""
+    ticker: str,
+    thesis: str = "",
+    mandate: str = "",
+    prev_verdict: str = "",
+    prev_date: str = "",
 ) -> AsyncGenerator[Tuple[str, str], None]:
     yield "status", f"Iniciando análise de {ticker}..."
 
@@ -45,16 +112,59 @@ async def run_equity_analysis(
         results = search_topic(query)
         all_results.extend(results)
 
-    yield "status", "Sintetizando análise com DeepSeek..."
+    # Gap detection
+    yield "status", "Identificando lacunas de pesquisa..."
+    followup = await _gap_check(ticker, "equity", all_results)
+    if followup:
+        yield "followup_queries", json.dumps(followup, ensure_ascii=False)
+        for fq in followup:
+            yield "status", f"[follow-up] {fq[:65]}..."
+            results = search_topic(fq)
+            all_results.extend(results)
 
-    async for chunk in stream_equity_report(all_results, ticker, thesis, mandate):
+    all_results = deduplicate_results(all_results)
+
+    # Emit sources for citation linking in frontend
+    sources = [{"title": r["title"], "url": r["url"], "source_type": r.get("source_type", "web")}
+               for r in all_results[:20] if r.get("url")]
+    yield "sources", json.dumps(sources, ensure_ascii=False)
+
+    yield "status", "Sintetizando análise com Claude..."
+
+    report_chunks = []
+    async for chunk in stream_equity_report(all_results, ticker, thesis, mandate, prev_verdict, prev_date):
+        report_chunks.append(chunk)
         yield "chunk", chunk
+
+    full_report = "".join(report_chunks)
+
+    # Extract verdict for artifact
+    verdict_match = re.search(r'\*\*(TESE MANTIDA|TESE ALTERADA|TESE INVALIDADA|COMPRAR|MANTER|REDUZIR|VENDER)\*\*', full_report)
+    confidence_match = re.search(r'Confiança:\s*\*?\*?([A-ZÁÉÍÓÚÃÕ]+)\*?\*?', full_report)
+
+    _save_artifact({
+        "mode": "equity",
+        "key": ticker,
+        "thesis": thesis,
+        "mandate": mandate,
+        "queries": queries,
+        "followup_queries": followup,
+        "sources": sources,
+        "verdict": verdict_match.group(1) if verdict_match else "",
+        "confidence": confidence_match.group(1) if confidence_match else "",
+        "report": full_report,
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+    })
 
     yield "done", "Análise concluída"
 
 
 async def run_startup_analysis(
-    name: str, url: str = "", thesis: str = ""
+    name: str,
+    url: str = "",
+    thesis: str = "",
+    prev_verdict: str = "",
+    prev_date: str = "",
 ) -> AsyncGenerator[Tuple[str, str], None]:
     yield "status", f"Iniciando due diligence: {name}..."
 
@@ -67,9 +177,46 @@ async def run_startup_analysis(
         results = search_topic(query)
         all_results.extend(results)
 
-    yield "status", "Gerando VC memo com DeepSeek..."
+    # Gap detection
+    yield "status", "Identificando lacunas de pesquisa..."
+    followup = await _gap_check(name, "startup", all_results)
+    if followup:
+        yield "followup_queries", json.dumps(followup, ensure_ascii=False)
+        for fq in followup:
+            yield "status", f"[follow-up] {fq[:65]}..."
+            results = search_topic(fq)
+            all_results.extend(results)
 
-    async for chunk in stream_startup_report(all_results, name, url, thesis):
+    all_results = deduplicate_results(all_results)
+
+    sources = [{"title": r["title"], "url": r["url"], "source_type": r.get("source_type", "web")}
+               for r in all_results[:20] if r.get("url")]
+    yield "sources", json.dumps(sources, ensure_ascii=False)
+
+    yield "status", "Gerando VC memo com Claude..."
+
+    report_chunks = []
+    async for chunk in stream_startup_report(all_results, name, url, thesis, prev_verdict, prev_date):
+        report_chunks.append(chunk)
         yield "chunk", chunk
+
+    full_report = "".join(report_chunks)
+
+    verdict_match = re.search(r'\*\*(INVESTIR|MONITORAR|PASSAR)\*\*', full_report)
+    confidence_match = re.search(r'Confiança:\s*\*?\*?([A-ZÁÉÍÓÚÃÕ]+)\*?\*?', full_report)
+
+    _save_artifact({
+        "mode": "startup",
+        "key": name,
+        "url": url,
+        "thesis": thesis,
+        "queries": queries,
+        "followup_queries": followup,
+        "sources": sources,
+        "verdict": verdict_match.group(1) if verdict_match else "",
+        "confidence": confidence_match.group(1) if confidence_match else "",
+        "report": full_report,
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+    })
 
     yield "done", "Due diligence concluída"

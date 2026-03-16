@@ -1,7 +1,6 @@
-"""main.py — Cortiq Decision Copilot
+"""main.py — Cortiq Decision Copilot v2
 FastAPI server with SSE streaming for equity + startup analysis.
 """
-import json
 import os
 
 from fastapi import FastAPI
@@ -30,19 +29,27 @@ def index():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "product": "Cortiq Decision Copilot"}
+    return {"status": "ok", "product": "Cortiq Decision Copilot v2"}
 
 
 def _sse(event: str, data: str) -> str:
-    return f"event: {event}\ndata: {data}\n\n"
+    # SSE spec: newlines in data must be split into multiple data: lines
+    data_lines = "\n".join(f"data: {line}" for line in data.split("\n"))
+    return f"event: {event}\n{data_lines}\n\n"
 
 
 @app.get("/analyze/equity")
-async def analyze_equity(ticker: str, thesis: str = "", mandate: str = ""):
+async def analyze_equity(
+    ticker: str,
+    thesis: str = "",
+    mandate: str = "",
+    prev_verdict: str = "",
+    prev_date: str = "",
+):
     """SSE: Real-time equity thesis validation."""
     async def gen():
         try:
-            async for event, data in run_equity_analysis(ticker, thesis, mandate):
+            async for event, data in run_equity_analysis(ticker, thesis, mandate, prev_verdict, prev_date):
                 yield _sse(event, data)
         except Exception as e:
             yield _sse("error", str(e))
@@ -56,11 +63,17 @@ async def analyze_equity(ticker: str, thesis: str = "", mandate: str = ""):
 
 
 @app.get("/analyze/startup")
-async def analyze_startup(name: str, url: str = "", thesis: str = ""):
+async def analyze_startup(
+    name: str,
+    url: str = "",
+    thesis: str = "",
+    prev_verdict: str = "",
+    prev_date: str = "",
+):
     """SSE: Real-time startup due diligence."""
     async def gen():
         try:
-            async for event, data in run_startup_analysis(name, url, thesis):
+            async for event, data in run_startup_analysis(name, url, thesis, prev_verdict, prev_date):
                 yield _sse(event, data)
         except Exception as e:
             yield _sse("error", str(e))

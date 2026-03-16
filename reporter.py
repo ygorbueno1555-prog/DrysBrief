@@ -1,9 +1,9 @@
-"""reporter.py — Cortiq Decision Copilot
-Generates structured investment reports via DeepSeek (async streaming).
+"""reporter.py — Cortiq Decision Copilot v2
+Generates structured investment reports via Claude (async streaming).
 """
 import os
-from typing import AsyncGenerator, List, Dict
-from openai import AsyncOpenAI
+from typing import AsyncGenerator, List, Dict, Optional
+from anthropic import AsyncAnthropic
 
 EQUITY_PROMPT = """\
 Você é um analista fundamentalista sênior com 20 anos de experiência no mercado brasileiro.
@@ -13,29 +13,38 @@ e gere um relatório de decisão estruturado.
 
 TESE ATUAL: {thesis}
 MANDATO DA CARTEIRA: {mandate}
-
-PESQUISAS:
+{prev_context}
+PESQUISAS (cite fontes pelo número [N] ao lado de cada afirmação):
 {research}
 
 ---
+REGRAS:
+- Use APENAS informações presentes nas pesquisas acima
+- Cite fontes com [N] em cada afirmação relevante
+- Separe fatos confirmados de inferências (use "estimado" ou "provável" para inferências)
+- Se não há dados suficientes para um ponto, diga "dados insuficientes"
+
 Gere o relatório EXATAMENTE neste formato (use ## para seções, **negrito** para destaques):
 
 ## VEREDITO
 **[TESE MANTIDA | TESE ALTERADA | TESE INVALIDADA]**
 Confiança: [ALTA | MÉDIA | BAIXA]
-Racional: [1 frase direta e objetiva]
+Racional da confiança: [1 frase — baseada na qualidade, quantidade e recência das evidências encontradas]
+Racional: [1 frase direta e objetiva sobre a tese]
 
 ## AÇÃO RECOMENDADA
 **[COMPRAR | MANTER | REDUZIR | VENDER]**
-[1-2 frases de justificativa com dados concretos]
+[1-2 frases com dados concretos e citações [N]]
+
+{what_changed_section}
 
 ## O QUE MUDOU
-- [fato relevante 1 com dado/fonte]
-- [fato relevante 2 com dado/fonte]
-- [fato relevante 3 com dado/fonte]
+- [fato relevante 1 com dado e citação [N]]
+- [fato relevante 2 com dado e citação [N]]
+- [fato relevante 3 com dado e citação [N]]
 
 ## CATALISADORES (próximos 30-90 dias)
-- [catalisador 1]
+- [catalisador 1 com citação [N] se disponível]
 - [catalisador 2]
 
 ## RISCOS E GATILHOS DE INVALIDAÇÃO
@@ -46,9 +55,15 @@ Racional: [1 frase direta e objetiva]
 [Análise do impacto considerando o mandato informado. Se mandato não informado, análise geral de risco/retorno.]
 
 ## TRILHA DE EVIDÊNCIAS
-- [evidência 1 com fonte]
-- [evidência 2 com fonte]
-- [evidência 3 com fonte]
+- **[N]** [título da fonte] — [afirmação principal suportada] — [URL completa]
+- **[N]** [título da fonte] — [afirmação principal suportada] — [URL completa]
+- **[N]** [título da fonte] — [afirmação principal suportada] — [URL completa]
+
+## EXPLORAR TAMBÉM
+Sugira 3 ativos/empresas que o analista pode querer comparar ou pesquisar em seguida:
+- **[ticker ou empresa 1]** — [por que é relevante comparar]
+- **[ticker ou empresa 2]** — [por que é relevante comparar]
+- **[ticker ou empresa 3]** — [por que é relevante comparar]
 
 Seja direto e use dados das pesquisas. Se não há dados suficientes para algum ponto, diga explicitamente.
 """
@@ -60,32 +75,41 @@ Com base nas pesquisas abaixo sobre {name}, gere um VC memo de due diligence com
 
 TESE DE INVESTIMENTO: {thesis}
 SITE: {url}
-
-PESQUISAS:
+{prev_context}
+PESQUISAS (cite fontes pelo número [N] ao lado de cada afirmação):
 {research}
 
 ---
+REGRAS:
+- Use APENAS informações presentes nas pesquisas acima
+- Cite fontes com [N] em cada afirmação relevante
+- Separe fatos confirmados de inferências (use "estimado" ou "provável" para inferências)
+- Se não há dados suficientes, indique claramente "dados insuficientes"
+
 Gere o VC memo EXATAMENTE neste formato (use ## para seções, **negrito** para destaques):
 
 ## VEREDITO
 **[INVESTIR | MONITORAR | PASSAR]**
 Confiança: [ALTA | MÉDIA | BAIXA]
+Racional da confiança: [1 frase — baseada na qualidade, quantidade e recência das evidências encontradas]
 Racional: [1 frase direta e objetiva]
 
 ## RESUMO EXECUTIVO
 [2-3 frases: o que fazem, para quem, por que importa agora, qual o diferencial]
 
+{what_changed_section}
+
 ## TIME
-- **Força**: [pontos fortes dos founders — experiência, exits, domínio do problema]
-- **Gap**: [o que falta no time — perfil técnico, comercial, setor]
+- **Força**: [pontos fortes dos founders com citações [N]]
+- **Gap**: [o que falta no time]
 
 ## MERCADO
-- **TAM estimado**: [valor se disponível, caso contrário "dados insuficientes"]
-- **Crescimento**: [taxa anual ou tendência identificada]
+- **TAM estimado**: [valor com citação [N] ou "dados insuficientes"]
+- **Crescimento**: [taxa anual ou tendência identificada com citação [N]]
 - **Timing**: [Cedo demais | No tempo certo | Tarde — com justificativa]
 
 ## TRAÇÃO
-- [métrica ou sinal de tração 1]
+- [métrica ou sinal de tração 1 com citação [N]]
 - [métrica ou sinal de tração 2]
 
 ## CONCORRENTES
@@ -93,8 +117,8 @@ Racional: [1 frase direta e objetiva]
 - **[concorrente 2]**: [como se diferenciam desta startup]
 
 ## RED FLAGS
-- [red flag 1 — risco concreto identificado]
-- [red flag 2 — risco concreto identificado]
+- [red flag 1 com citação [N] se disponível]
+- [red flag 2]
 
 ## TESE DE INVESTIMENTO
 **Por que INVESTIR**: [argumento principal de upside]
@@ -104,62 +128,94 @@ Racional: [1 frase direta e objetiva]
 - [evento que mudaria o veredito para PASSAR]
 - [métrica que, se não atingida, invalida a tese]
 
+## TRILHA DE EVIDÊNCIAS
+- **[N]** [título da fonte] — [afirmação principal suportada] — [URL completa]
+- **[N]** [título da fonte] — [afirmação principal suportada] — [URL completa]
+- **[N]** [título da fonte] — [afirmação principal suportada] — [URL completa]
+
 ## PRÓXIMOS PASSOS
 - [due diligence adicional recomendada]
 - [pergunta prioritária para os founders]
 
-Seja direto. Use dados das pesquisas. Se não há dados suficientes, indique claramente "dados insuficientes".
+## EXPLORAR TAMBÉM
+Sugira 3 startups similares que o analista pode querer pesquisar para comparação:
+- **[startup 1]** — [por que é relevante comparar ou o que têm em comum]
+- **[startup 2]** — [por que é relevante comparar ou o que têm em comum]
+- **[startup 3]** — [por que é relevante comparar ou o que têm em comum]
+
+Seja direto. Use dados das pesquisas. Se não há dados suficientes, indique claramente.
 """
 
 
 def _format_research(results: List[Dict]) -> str:
     parts = []
     for i, r in enumerate(results[:20], 1):
-        parts.append(f"[{i}] {r['title']}\n{r['content']}\nFonte: {r['url']}")
+        source_label = f"[{r.get('source_type', 'web')}]" if r.get('source_type') else ""
+        parts.append(f"[{i}] {r['title']} {source_label}\n{r['content']}\nFonte: {r['url']}")
     return "\n\n".join(parts)
 
 
-def _get_client() -> AsyncOpenAI:
-    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+def _get_client() -> AsyncAnthropic:
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
-        raise ValueError("DEEPSEEK_API_KEY não configurada")
-    return AsyncOpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+        raise ValueError("ANTHROPIC_API_KEY não configurada")
+    return AsyncAnthropic(api_key=api_key)
+
+
+def _get_model() -> str:
+    return os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 
 
 async def stream_equity_report(
-    results: List[Dict], ticker: str, thesis: str, mandate: str
+    results: List[Dict],
+    ticker: str,
+    thesis: str,
+    mandate: str,
+    prev_verdict: str = "",
+    prev_date: str = "",
 ) -> AsyncGenerator[str, None]:
     try:
         client = _get_client()
     except ValueError as e:
         yield f"## Erro de Configuração\n{e}"
         return
+
+    # Build comparison context if we have previous analysis
+    prev_context = ""
+    what_changed_section = ""
+    if prev_verdict and prev_date:
+        prev_context = f"\nANÁLISE ANTERIOR ({prev_date}): O veredito foi **{prev_verdict}**.\n"
+        what_changed_section = f"## O QUE MUDOU DESDE {prev_date}\n[Compare com o veredito anterior ({prev_verdict}) e destaque o que mudou: novos riscos, novos catalisadores, mudança de recomendação, fatos relevantes novos]"
 
     prompt = EQUITY_PROMPT.format(
         ticker=ticker,
         thesis=thesis or "Sem tese específica — gere análise geral do ativo",
         mandate=mandate or "Sem mandato específico — análise geral",
         research=_format_research(results),
+        prev_context=prev_context,
+        what_changed_section=what_changed_section,
     )
 
     try:
-        stream = await client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[{"role": "user", "content": prompt}],
-            stream=True,
-            max_tokens=2000,
+        async with client.messages.stream(
+            model=_get_model(),
+            max_tokens=2500,
             temperature=0.3,
-        )
-        async for chunk in stream:
-            content = chunk.choices[0].delta.content
-            if content:
-                yield content
+            messages=[{"role": "user", "content": prompt}],
+        ) as stream:
+            async for text in stream.text_stream:
+                yield text
     except Exception as e:
         yield f"\n\n## Erro na Análise\n{e}"
 
 
 async def stream_startup_report(
-    results: List[Dict], name: str, url: str, thesis: str
+    results: List[Dict],
+    name: str,
+    url: str,
+    thesis: str,
+    prev_verdict: str = "",
+    prev_date: str = "",
 ) -> AsyncGenerator[str, None]:
     try:
         client = _get_client()
@@ -167,24 +223,29 @@ async def stream_startup_report(
         yield f"## Erro de Configuração\n{e}"
         return
 
+    prev_context = ""
+    what_changed_section = ""
+    if prev_verdict and prev_date:
+        prev_context = f"\nANÁLISE ANTERIOR ({prev_date}): O veredito foi **{prev_verdict}**.\n"
+        what_changed_section = f"## O QUE MUDOU DESDE {prev_date}\n[Compare com o veredito anterior ({prev_verdict}) e destaque mudanças: tração, time, mercado, funding, riscos novos]"
+
     prompt = STARTUP_PROMPT.format(
         name=name,
         url=url or "não informado",
         thesis=thesis or "Sem tese específica — gere análise geral da startup",
         research=_format_research(results),
+        prev_context=prev_context,
+        what_changed_section=what_changed_section,
     )
 
     try:
-        stream = await client.chat.completions.create(
-            model="deepseek-chat",
-            messages=[{"role": "user", "content": prompt}],
-            stream=True,
+        async with client.messages.stream(
+            model=_get_model(),
             max_tokens=2500,
             temperature=0.3,
-        )
-        async for chunk in stream:
-            content = chunk.choices[0].delta.content
-            if content:
-                yield content
+            messages=[{"role": "user", "content": prompt}],
+        ) as stream:
+            async for text in stream.text_stream:
+                yield text
     except Exception as e:
         yield f"\n\n## Erro na Análise\n{e}"
