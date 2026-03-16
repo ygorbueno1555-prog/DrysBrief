@@ -11,6 +11,7 @@ from typing import AsyncGenerator, Tuple, List, Dict
 
 from researcher import search_topic, deduplicate_results
 from reporter import stream_equity_report, stream_startup_report
+from equity_data import get_equity_data, format_market_data
 
 
 def build_equity_queries(ticker: str, thesis: str) -> list[str]:
@@ -115,11 +116,19 @@ async def run_equity_analysis(
 ) -> AsyncGenerator[Tuple[str, str], None]:
     yield "status", f"Iniciando análise de {ticker}..."
 
+    # Fetch real market data alongside initial web queries
     queries = build_equity_queries(ticker, thesis)
     yield "queries", json.dumps(queries, ensure_ascii=False)
 
-    yield "status", f"Pesquisando {len(queries)} fontes em paralelo..."
-    all_results = await _run_queries_parallel(queries)
+    yield "status", f"Coletando dados de mercado e pesquisando {len(queries)} fontes..."
+    market_data, all_results = await asyncio.gather(
+        get_equity_data(ticker),
+        _run_queries_parallel(queries),
+    )
+
+    if market_data:
+        yield "market_data", json.dumps(market_data, ensure_ascii=False)
+
     yield "status", f"{len(all_results)} resultados coletados. Verificando lacunas..."
 
     # Gap detection
@@ -141,7 +150,7 @@ async def run_equity_analysis(
     yield "status", "Sintetizando análise com Claude..."
 
     report_chunks = []
-    async for chunk in stream_equity_report(all_results, ticker, thesis, mandate, prev_verdict, prev_date):
+    async for chunk in stream_equity_report(all_results, ticker, thesis, mandate, prev_verdict, prev_date, market_data):
         report_chunks.append(chunk)
         yield "chunk", chunk
 
@@ -158,6 +167,7 @@ async def run_equity_analysis(
         "key": ticker,
         "thesis": thesis,
         "mandate": mandate,
+        "market_data": market_data or {},
         "queries": queries,
         "followup_queries": followup,
         "sources": sources,

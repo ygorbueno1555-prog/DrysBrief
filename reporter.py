@@ -14,6 +14,7 @@ e gere um relatório de decisão estruturado.
 TESE ATUAL: {thesis}
 MANDATO DA CARTEIRA: {mandate}
 {prev_context}
+{market_data_section}
 PESQUISAS (cite fontes pelo número [N] ao lado de cada afirmação):
 {research}
 
@@ -173,12 +174,15 @@ async def stream_equity_report(
     mandate: str,
     prev_verdict: str = "",
     prev_date: str = "",
+    market_data: Optional[dict] = None,
 ) -> AsyncGenerator[str, None]:
     try:
         client = _get_client()
     except ValueError as e:
         yield f"## Erro de Configuração\n{e}"
         return
+
+    from equity_data import format_market_data
 
     # Build comparison context if we have previous analysis
     prev_context = ""
@@ -187,6 +191,12 @@ async def stream_equity_report(
         prev_context = f"\nANÁLISE ANTERIOR ({prev_date}): O veredito foi **{prev_verdict}**.\n"
         what_changed_section = f"## O QUE MUDOU DESDE {prev_date}\n[Compare com o veredito anterior ({prev_verdict}) e destaque o que mudou: novos riscos, novos catalisadores, mudança de recomendação, fatos relevantes novos]"
 
+    market_data_section = ""
+    if market_data:
+        formatted = format_market_data(market_data)
+        if formatted:
+            market_data_section = formatted + "\n\n"
+
     prompt = EQUITY_PROMPT.format(
         ticker=ticker,
         thesis=thesis or "Sem tese específica — gere análise geral do ativo",
@@ -194,6 +204,7 @@ async def stream_equity_report(
         research=_format_research(results),
         prev_context=prev_context,
         what_changed_section=what_changed_section,
+        market_data_section=market_data_section,
     )
 
     try:

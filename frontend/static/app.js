@@ -116,6 +116,10 @@ function startAnalysis(url, label) {
     try { sourcesMap = JSON.parse(e.data); } catch {}
   });
 
+  currentES.addEventListener('market_data', e => {
+    try { renderMarketDataBar(JSON.parse(e.data)); } catch {}
+  });
+
   currentES.addEventListener('chunk', e => {
     reportBuffer += e.data;
     scheduleRender(false);
@@ -398,6 +402,41 @@ window.exploreItem = function(name) {
   }
 };
 
+// ── Market data bar ───────────────────────────────────────
+function renderMarketDataBar(d) {
+  const existing = document.getElementById('market-data-bar');
+  if (existing) existing.remove();
+
+  if (!d || !d.price) return;
+
+  const pct = d.change_pct || '';
+  const isPos = pct.startsWith('-') ? false : true;
+  const changeClass = pct ? (isPos ? 'md-pos' : 'md-neg') : '';
+
+  const pills = [
+    d.pe_trailing ? `P/L ${d.pe_trailing}` : null,
+    d.ev_ebitda   ? `EV/EBITDA ${d.ev_ebitda}` : null,
+    d.pb          ? `P/VP ${d.pb}` : null,
+    d.div_yield   ? `DY ${d.div_yield}` : null,
+    d.market_cap  ? `Mktcap ${d.market_cap}` : null,
+  ].filter(Boolean);
+
+  const bar = document.createElement('div');
+  bar.id = 'market-data-bar';
+  bar.className = 'market-data-bar';
+  bar.innerHTML = `
+    <span class="md-ticker">${escHtml(d.ticker)}</span>
+    <span class="md-price">${escHtml(d.price)}</span>
+    ${pct ? `<span class="md-change ${changeClass}">${isPos ? '+' : ''}${escHtml(pct)}</span>` : ''}
+    <span class="md-sep">|</span>
+    ${pills.map(p => `<span class="md-pill">${escHtml(p)}</span>`).join('')}
+    ${d.week_52_high && d.week_52_low ? `<span class="md-range">52w ${escHtml(d.week_52_low)}–${escHtml(d.week_52_high)}</span>` : ''}
+  `;
+
+  // Insert after verdict-bar
+  verdictBar.insertAdjacentElement('afterend', bar);
+}
+
 // ── Verdict detection ─────────────────────────────────────
 const VERDICTS = {
   green: ['TESE MANTIDA', 'INVESTIR', 'COMPRAR'],
@@ -475,6 +514,8 @@ function resetOutput() {
   queryEls = [];
   emptyState.style.display = 'flex';
   if (renderFrame) { cancelAnimationFrame(renderFrame); renderFrame = null; }
+  const mdBar = document.getElementById('market-data-bar');
+  if (mdBar) mdBar.remove();
 }
 
 function setBtnState(disabled) {
