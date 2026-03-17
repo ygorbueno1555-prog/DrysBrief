@@ -1,0 +1,6 @@
+{
+  "max_bullets": 6,
+  "required_checks": ["claims_without_evidence", "confidence_overstated", "missing_sections"],
+  "anti_patterns": ["precise_valuation_without_sources", "ARR_without_source", "TAM_without_source"],
+  "usefulness_min_bullets": 3
+}

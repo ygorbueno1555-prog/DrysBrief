@@ -1,0 +1,9 @@
+{
+  "id": "startup_notion",
+  "mode": "startup",
+  "input": {"startup_name": "Notion", "website": "notion.so"},
+  "expected_sections": ["team", "market", "traction", "competitors", "red_flags"],
+  "expected_key_facts": ["funding", "users", "valuation"],
+  "expected_primary_source_domains": ["notion.so"],
+  "critical_gaps_if_missing": ["traction", "market"]
+}

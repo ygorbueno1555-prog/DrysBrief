@@ -1,0 +1,11 @@
+{
+  "id": "equity_vale3",
+  "mode": "stock",
+  "input": {"ticker": "VALE3"},
+  "expected_sections": ["financials", "valuation", "catalysts", "risks", "recent_news"],
+  "expected_key_facts": ["ebitda", "dividend", "guidance"],
+  "expected_primary_source_domains": ["vale.com", "sec.gov"],
+  "critical_gaps_if_missing": ["financials", "valuation"],
+  "anti_patterns": ["valuation_without_source"],
+  "optional_checks": ["critic_mentions_missing_data"]
+}

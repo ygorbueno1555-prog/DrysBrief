@@ -1,0 +1,9 @@
+{
+  "id": "equity_petr4",
+  "mode": "stock",
+  "input": {"ticker": "PETR4"},
+  "expected_sections": ["financials", "valuation", "catalysts", "risks", "recent_news"],
+  "expected_key_facts": ["ebitda", "dividend", "guidance"],
+  "expected_primary_source_domains": ["petrobras.com.br", "sec.gov"],
+  "critical_gaps_if_missing": ["financials", "valuation"]
+}

@@ -1,0 +1,14 @@
+{
+  "coverage_weight": 0.3,
+  "evidence_weight": 0.35,
+  "primary_weight": 0.1,
+  "critic_weight": 0.1,
+  "weak_coverage_weight": 0.4,
+  "primary_ratio_hard_cap_1": 0.05,
+  "primary_ratio_hard_cap_2": 0.1,
+  "evidence_cap_1": 0.5,
+  "evidence_cap_2": 0.6,
+  "primary_min_for_quant": 0.12,
+  "marketing_penalty_threshold": 0.6,
+  "marketing_penalty": 0.15
+}

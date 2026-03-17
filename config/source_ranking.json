@@ -1,0 +1,10 @@
+{
+  "primary_domains": ["sec.gov", "investor", ".gov", ".edu"],
+  "preferred_domains": ["b3.com.br", "petrobras.com.br", "notion.so", "stripe.com"],
+  "marketing_domains": ["blog", "templates", "pricing", "landing", "careers"],
+  "weights": {
+    "primary": 1.0,
+    "preferred": 0.6,
+    "marketing": 0.2
+  }
+}

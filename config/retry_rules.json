@@ -1,0 +1,6 @@
+{
+  "coverage_threshold": 0.7,
+  "primary_threshold": 0.12,
+  "retry_on_weak_sections": true,
+  "max_followups": 1
+}
