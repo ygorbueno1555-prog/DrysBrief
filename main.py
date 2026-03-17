@@ -1,6 +1,7 @@
 """main.py — Cortiq Decision Copilot v2
 FastAPI server with SSE streaming, daily briefing scheduler, and draft review API.
 """
+import json
 import os
 from contextlib import asynccontextmanager
 
@@ -57,8 +58,28 @@ app = FastAPI(title="Cortiq Decision Copilot", lifespan=lifespan)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 STATIC_DIR = os.path.join(FRONTEND_DIR, "static")
+DATA_DIR = os.path.join(BASE_DIR, "data")
+HISTORY_FILE = os.path.join(DATA_DIR, "analysis_history.json")
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+# ── History helpers ───────────────────────────────────────
+
+def _load_history() -> List:
+    if not os.path.exists(HISTORY_FILE):
+        return []
+    try:
+        with open(HISTORY_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def _save_history(entries: list) -> None:
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(entries, f, ensure_ascii=False, indent=2)
 
 
 # ── Pages ─────────────────────────────────────────────────
@@ -77,6 +98,44 @@ def briefing_page():
 @app.get("/health")
 def health():
     return {"status": "ok", "product": "Cortiq Decision Copilot v2"}
+
+
+# ── History endpoints ─────────────────────────────────────
+
+@app.get("/history")
+def get_history():
+    return _load_history()
+
+
+@app.post("/history")
+async def post_history(entry: dict):
+    mode = entry.get("mode", "")
+    key = (entry.get("key") or "").lower()
+    entries = _load_history()
+    entries = [
+        e for e in entries
+        if not (e.get("mode") == mode and (e.get("key") or "").lower() == key)
+    ]
+    entries.insert(0, entry)
+    _save_history(entries[:50])
+    return {"ok": True}
+
+
+@app.delete("/history")
+def clear_history():
+    _save_history([])
+    return {"ok": True}
+
+
+@app.delete("/history/{mode}/{key}")
+def delete_history_entry(mode: str, key: str):
+    entries = _load_history()
+    entries = [
+        e for e in entries
+        if not (e.get("mode") == mode and (e.get("key") or "").lower() == key.lower())
+    ]
+    _save_history(entries)
+    return {"ok": True}
 
 
 # ── SSE helpers ───────────────────────────────────────────

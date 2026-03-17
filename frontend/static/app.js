@@ -15,6 +15,7 @@ const $ = id => document.getElementById(id);
 
 const equityForm    = $('equity-form');
 const startupForm   = $('startup-form');
+const inputPanel    = $('input-panel');
 const statusPanel   = $('status-panel');
 const statusDot     = $('status-dot');
 const statusText    = $('status-text');
@@ -26,16 +27,34 @@ const verdictMeta   = $('verdict-meta');
 const verdictTime   = $('verdict-time');
 const reportWrapper = $('report-wrapper');
 const reportContent = $('report-content');
+const historyView   = $('history-view');
 
 // ── Mode tabs ─────────────────────────────────────────────
 document.querySelectorAll('.mode-tab').forEach(tab => {
   tab.addEventListener('click', () => {
     currentMode = tab.dataset.mode;
-    document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.mode-tab').forEach(t => {
+      t.classList.remove('active');
+      t.setAttribute('aria-selected', 'false');
+    });
     tab.classList.add('active');
-    equityForm.style.display  = currentMode === 'equity'  ? 'block' : 'none';
-    startupForm.style.display = currentMode === 'startup' ? 'block' : 'none';
-    resetOutput();
+    tab.setAttribute('aria-selected', 'true');
+
+    if (currentMode === 'history') {
+      inputPanel.style.display = 'none';
+      historyView.style.display = 'flex';
+      emptyState.style.display = 'none';
+      reportWrapper.classList.remove('visible');
+      verdictBar.classList.remove('visible');
+      statusPanel.classList.remove('visible');
+      renderHistoryView();
+    } else {
+      inputPanel.style.display = '';
+      historyView.style.display = 'none';
+      equityForm.style.display  = currentMode === 'equity'  ? 'block' : 'none';
+      startupForm.style.display = currentMode === 'startup' ? 'block' : 'none';
+      resetOutput();
+    }
   });
 });
 
@@ -87,7 +106,20 @@ function startAnalysis(url, label) {
   startTime    = Date.now();
 
   statusPanel.classList.add('visible');
-  setStatus('Conectando...', 'pulse');
+  setStatus('Preparando pesquisa...', 'pulse');
+
+  // Show skeleton queries immediately (before SSE arrives)
+  // agent.py emits queries right away, but SSE handshake takes ~100-300ms
+  const skeletonCount = currentMode === 'startup' ? 7 : 6;
+  queriesList.innerHTML = '';
+  queryEls = [];
+  for (let i = 1; i <= skeletonCount; i++) {
+    const el = document.createElement('div');
+    el.className = 'query-item query-skeleton';
+    el.textContent = `${i}. ···`;
+    queriesList.appendChild(el);
+    queryEls.push(el);
+  }
 
   emptyState.style.display = 'none';
   reportWrapper.classList.add('visible');
@@ -208,8 +240,12 @@ function sectionColor(title) {
   return 'blue';
 }
 
-function renderBlocks(markdown, final) {
+// targetEl + srcs are optional; defaults to global reportContent / sourcesMap
+function renderBlocks(markdown, final, targetEl, srcs) {
   if (!markdown) return;
+
+  const el   = targetEl || reportContent;
+  const refs = srcs !== undefined ? srcs : sourcesMap;
 
   const rawSections = markdown.split(/(?=^## )/m);
   const blocks = [];
@@ -228,7 +264,7 @@ function renderBlocks(markdown, final) {
   });
 
   if (!blocks.length) {
-    reportContent.innerHTML =
+    el.innerHTML =
       `<div class="report-section"><div class="report-section-body"><p>${escHtml(markdown)}</p></div></div>`
       + (final ? '' : '<div class="streaming-cursor cursor-blink"></div>');
     return;
@@ -236,9 +272,9 @@ function renderBlocks(markdown, final) {
 
   let html = '';
   blocks.forEach((block, idx) => {
-    const isLast    = idx === blocks.length - 1;
-    const color     = block.title ? sectionColor(block.title) : 'blue';
-    const isExplore = block.title?.toUpperCase().includes('EXPLORAR');
+    const isLast     = idx === blocks.length - 1;
+    const color      = block.title ? sectionColor(block.title) : 'blue';
+    const isExplore  = block.title?.toUpperCase().includes('EXPLORAR');
     const isEvidence = block.title?.toUpperCase().includes('TRILHA');
     const isChanged  = block.title?.toUpperCase().includes('MUDOU');
 
@@ -268,14 +304,14 @@ function renderBlocks(markdown, final) {
     html += `</div></div>`;
   });
 
-  reportContent.innerHTML = html;
+  el.innerHTML = html;
 
-  // Make citation numbers [N] clickable using sourcesMap
-  if (sourcesMap.length) {
-    reportContent.querySelectorAll('p, li').forEach(el => {
-      el.innerHTML = el.innerHTML.replace(/\[(\d+)\]/g, (match, n) => {
+  // Make citation numbers [N] clickable
+  if (refs.length) {
+    el.querySelectorAll('p, li').forEach(row => {
+      row.innerHTML = row.innerHTML.replace(/\[(\d+)\]/g, (match, n) => {
         const idx = parseInt(n) - 1;
-        const src = sourcesMap[idx];
+        const src = refs[idx];
         if (src && src.url) {
           return `<a href="${escHtml(src.url)}" target="_blank" rel="noopener" class="citation" title="${escHtml(src.title)}">[${n}]</a>`;
         }
@@ -284,7 +320,7 @@ function renderBlocks(markdown, final) {
     });
   }
 
-  if (!final) {
+  if (!final && !targetEl) {
     const wrapper = document.getElementById('report-wrapper');
     wrapper.scrollTop = wrapper.scrollHeight;
   }
@@ -534,26 +570,43 @@ function enc(s)     { return encodeURIComponent(s); }
 function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function escAttr(s) { return String(s).replace(/'/g,"\\'"); }
 
-// ── HISTORY (localStorage) ────────────────────────────────
-const HISTORY_KEY = 'cortiq_history_v1';
-const MAX_HISTORY  = 20;
+// ── HISTORY (server-side) ─────────────────────────────────
+let historyCache = [];
 
-function historyLoad() {
-  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); }
-  catch { return []; }
-}
-
-function historySave(entry) {
-  const list = historyLoad().filter(
-    e => !(e.key === entry.key && e.mode === entry.mode)
-  );
-  list.unshift(entry);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, MAX_HISTORY)));
+async function historyInit() {
+  try {
+    const res = await fetch('/history');
+    historyCache = await res.json();
+  } catch {
+    historyCache = [];
+  }
   renderHistoryPanel();
 }
 
+function historyLoad() {
+  return historyCache;
+}
+
+function historySave(entry) {
+  // Update in-memory cache synchronously
+  historyCache = historyCache.filter(
+    e => !(e.key === entry.key && e.mode === entry.mode)
+  );
+  historyCache.unshift(entry);
+  if (historyCache.length > 50) historyCache = historyCache.slice(0, 50);
+  renderHistoryPanel();
+  if (currentMode === 'history') renderHistoryView();
+
+  // Persist to server (fire and forget)
+  fetch('/history', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(entry),
+  }).catch(() => {});
+}
+
 function historyFind(mode, key) {
-  return historyLoad().find(e => e.mode === mode && e.key.toLowerCase() === key.toLowerCase());
+  return historyCache.find(e => e.mode === mode && e.key.toLowerCase() === key.toLowerCase());
 }
 
 function historyFormatDate(iso) {
@@ -576,18 +629,179 @@ function renderHistoryPanel() {
 
   listEl.innerHTML = list.map(e => `
     <div class="history-item" onclick="historyOpen('${escAttr(e.key)}','${e.mode}')">
-      <div class="history-item-badge ${e.verdictColor}">${e.verdict}</div>
+      <div class="history-item-badge ${e.verdictColor}">${escHtml(e.verdict)}</div>
       <div class="history-item-name">${escHtml(e.key)}</div>
       <div class="history-item-date">${historyFormatDate(e.date)}</div>
     </div>
   `).join('');
 }
 
+// ── History full view (tab mode) ─────────────────────────
+
+function historyExtractSummary(report) {
+  if (!report) return '';
+  // Try RESUMO EXECUTIVO or VEREDITO section
+  const match = report.match(/## (?:RESUMO EXECUTIVO|VEREDITO)[^\n]*\n+([\s\S]+?)(?=\n##|$)/i);
+  if (match) {
+    return match[1]
+      .replace(/\*\*/g, '')
+      .replace(/^[-*]\s+/gm, '')
+      .replace(/\n+/g, ' ')
+      .trim()
+      .slice(0, 200);
+  }
+  // Fallback: first content lines after a heading
+  const lines = report.split('\n');
+  const result = [];
+  let inContent = false;
+  for (const line of lines) {
+    if (line.startsWith('## ')) { inContent = true; continue; }
+    if (inContent && line.trim() && !line.startsWith('#')) {
+      result.push(line.trim().replace(/\*\*/g, ''));
+      if (result.join(' ').length > 180) break;
+    }
+  }
+  return result.join(' ').slice(0, 200);
+}
+
+function renderHistoryView(selectedKey, selectedMode) {
+  const list = historyCache;
+
+  if (!list.length) {
+    historyView.innerHTML = `
+      <div class="hist-empty">
+        <div class="hist-empty-icon">▦</div>
+        <p>Nenhuma análise salva ainda</p>
+        <div class="hist-empty-hint">analise um ativo ou startup para começar</div>
+      </div>`;
+    return;
+  }
+
+  const cards = list.map(e => {
+    const summary   = historyExtractSummary(e.report);
+    const dateStr   = new Date(e.date).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric' });
+    const modeLabel = e.mode === 'equity' ? '⬡ EQUITY' : '◈ STARTUP';
+    const modeClass = e.mode === 'equity' ? 'equity' : 'startup';
+    const isActive  = e.key === selectedKey && e.mode === selectedMode;
+
+    return `
+      <div class="hist-card${isActive ? ' active' : ''}" data-key="${escAttr(e.key)}" data-mode="${escAttr(e.mode)}">
+        <div class="hist-card-top">
+          <span class="hist-mode-badge ${modeClass}">${modeLabel}</span>
+          <span class="hist-card-key">${escHtml(e.key)}</span>
+          <span class="verdict-tag ${escHtml(e.verdictColor)} hist-verdict">${escHtml(e.verdict)}</span>
+          <span class="hist-card-date">${dateStr}</span>
+          <button class="hist-card-open">Ver →</button>
+        </div>
+        <div class="hist-card-summary">${summary ? escHtml(summary) + (summary.length >= 199 ? '…' : '') : ''}</div>
+      </div>`;
+  }).join('');
+
+  historyView.innerHTML = `
+    <div class="hist-layout" id="hist-layout">
+      <div class="hist-list-col" id="hist-list-col">
+        <div class="hist-view-header">
+          <div class="hist-view-title">ANÁLISES <span class="hist-view-count">${list.length}</span></div>
+          <button class="hist-view-clear" id="btn-clear-all">LIMPAR</button>
+        </div>
+        <div class="hist-cards" id="hist-cards">${cards}</div>
+      </div>
+      <div class="hist-detail-col" id="hist-detail-col"></div>
+    </div>`;
+
+  // Card click → show detail panel (no tab switch, no new analysis)
+  historyView.querySelectorAll('.hist-card').forEach(card => {
+    card.addEventListener('click', () => openHistoryDetail(card.dataset.key, card.dataset.mode));
+  });
+
+  $('btn-clear-all').addEventListener('click', () => {
+    if (confirm('Limpar todo o histórico de análises?')) {
+      historyCache = [];
+      renderHistoryPanel();
+      renderHistoryView();
+      $('cache-hint').style.display = 'none';
+      fetch('/history', { method: 'DELETE' }).catch(() => {});
+    }
+  });
+
+  // Re-open selected item if any
+  if (selectedKey) openHistoryDetail(selectedKey, selectedMode);
+}
+
+function openHistoryDetail(key, mode) {
+  const entry = historyFind(mode, key);
+  if (!entry) return;
+
+  const layout = $('hist-layout');
+  const detail = $('hist-detail-col');
+  if (!layout || !detail) return;
+
+  // Highlight active card
+  historyView.querySelectorAll('.hist-card').forEach(c => {
+    c.classList.toggle('active', c.dataset.key === key && c.dataset.mode === mode);
+  });
+
+  layout.classList.add('has-detail');
+
+  const dateStr = new Date(entry.date).toLocaleDateString('pt-BR', {
+    day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'
+  });
+  const modeLabel = entry.mode === 'equity' ? '⬡ Equity' : '◈ Startup';
+
+  detail.innerHTML = `
+    <div class="hist-detail-header">
+      <span class="hist-detail-mode">${modeLabel}</span>
+      <span class="hist-detail-key">${escHtml(entry.key)}</span>
+      <span class="verdict-tag ${escHtml(entry.verdictColor)}">${escHtml(entry.verdict)}</span>
+      ${entry.confidence ? `<span class="hist-detail-meta">Confiança: <strong>${escHtml(entry.confidence)}</strong></span>` : ''}
+      <span class="hist-detail-date">${dateStr}</span>
+      <button class="hist-detail-rerun" id="hist-detail-rerun">↺ Reanalisar</button>
+      <button class="hist-detail-close" id="hist-detail-close">×</button>
+    </div>
+    <div class="hist-detail-body">
+      <div class="report-content" id="hist-report-content"></div>
+    </div>`;
+
+  // Render cached report into the detail panel — zero API calls
+  renderBlocks(entry.report, true, $('hist-report-content'), entry.sources || []);
+
+  // Close
+  $('hist-detail-close').addEventListener('click', () => {
+    layout.classList.remove('has-detail');
+    detail.innerHTML = '';
+    historyView.querySelectorAll('.hist-card').forEach(c => c.classList.remove('active'));
+  });
+
+  // Reanalisar — switch to analysis tab and run fresh (no cache flash)
+  $('hist-detail-rerun').addEventListener('click', () => {
+    // Switch to the right mode
+    if (currentMode !== mode) {
+      document.querySelector(`.mode-tab[data-mode="${mode}"]`)?.click();
+    }
+    // Fill form
+    if (mode === 'equity') {
+      $('ticker').value  = entry.key;
+      $('thesis').value  = entry.thesis || '';
+      $('mandate').value = entry.mandate || '';
+    } else {
+      $('startup-name').value   = entry.key;
+      $('startup-url').value    = entry.url || '';
+      $('startup-thesis').value = entry.thesis || '';
+    }
+    // Start fresh analysis (after mode switch settles)
+    setTimeout(() => {
+      if (mode === 'equity') $('btn-equity').click();
+      else $('btn-startup').click();
+    }, 30);
+  });
+}
+
 window.historyOpen = function(key, mode) {
   const entry = historyFind(mode, key);
   if (!entry) return;
 
-  if (mode !== currentMode) {
+  // Switch to the correct analysis mode (equity or startup)
+  if (currentMode !== mode) {
     document.querySelector(`.mode-tab[data-mode="${mode}"]`)?.click();
   }
 
@@ -604,7 +818,8 @@ window.historyOpen = function(key, mode) {
   showCachedReport(entry);
 };
 
-function showCachedReport(entry) {
+// showHint=false when opening from history (avoids confusing "Reanalisar" button)
+function showCachedReport(entry, showHint = false) {
   emptyState.style.display = 'none';
   reportWrapper.classList.add('visible');
   verdictBar.classList.add('visible');
@@ -615,7 +830,7 @@ function showCachedReport(entry) {
   reportBuffer            = entry.report;
   sourcesMap              = entry.sources || [];
   renderBlocks(entry.report, true);
-  showCacheHint(entry);
+  if (showHint) showCacheHint(entry);
 }
 
 function showCacheHint(entry) {
@@ -681,12 +896,13 @@ function bindHistoryHints() {
 
 // ── Init ──────────────────────────────────────────────────
 (function init() {
-  renderHistoryPanel();
+  historyInit();  // loads from server, then renders panel
   bindHistoryHints();
 
   $('btn-clear-history').addEventListener('click', () => {
-    localStorage.removeItem(HISTORY_KEY);
+    historyCache = [];
     renderHistoryPanel();
     $('cache-hint').style.display = 'none';
+    fetch('/history', { method: 'DELETE' }).catch(() => {});
   });
 })();
