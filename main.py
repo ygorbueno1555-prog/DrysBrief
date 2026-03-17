@@ -89,6 +89,75 @@ def index():
         return HTMLResponse(f.read())
 
 
+@app.get("/monitor")
+def monitor_page():
+    with open(os.path.join(FRONTEND_DIR, "monitor.html"), encoding="utf-8") as f:
+        return HTMLResponse(f.read())
+
+
+# ── Portfolio Monitor API ──────────────────────────────────
+
+@app.get("/api/monitor/portfolios")
+def api_get_portfolios():
+    from monitor import get_portfolios
+    return get_portfolios()
+
+
+@app.get("/api/monitor/tickers")
+def api_get_tickers():
+    """All tickers with today's snapshot (if available)."""
+    from monitor import get_all_equity_tickers, load_snapshot
+    from datetime import date
+    result = []
+    for item in get_all_equity_tickers():
+        snap = load_snapshot(item["ticker"], date.today())
+        result.append({**item, "today": snap})
+    return result
+
+
+@app.get("/api/monitor/ticker/{ticker}")
+def api_get_ticker(ticker: str):
+    """Full history for one ticker (last 30 days)."""
+    from monitor import load_history, load_snapshot
+    from datetime import date
+    history = load_history(ticker.upper(), days=30)
+    today = load_snapshot(ticker.upper(), date.today())
+    return {"ticker": ticker.upper(), "today": today, "history": history}
+
+
+@app.post("/api/monitor/refresh/{ticker}")
+async def api_refresh_ticker(ticker: str, force: bool = False):
+    from monitor import refresh_ticker
+    data = await refresh_ticker(ticker.upper(), force=force)
+    return data
+
+
+@app.post("/api/monitor/refresh")
+async def api_refresh_all(force: bool = False):
+    from monitor import refresh_all
+    data = await refresh_all(force=force)
+    return {"ok": True, "count": len(data), "tickers": [d.get("ticker") for d in data]}
+
+
+@app.post("/api/monitor/ticker")
+async def api_add_ticker(body: dict):
+    from monitor import add_ticker_to_portfolio
+    ticker = (body.get("ticker") or "").upper().strip()
+    portfolio_id = body.get("portfolio_id", "carteira-principal")
+    thesis = body.get("thesis", "")
+    if not ticker:
+        return {"ok": False, "error": "ticker required"}
+    ok = add_ticker_to_portfolio(portfolio_id, ticker, thesis)
+    return {"ok": ok}
+
+
+@app.delete("/api/monitor/ticker/{portfolio_id}/{ticker}")
+def api_remove_ticker(portfolio_id: str, ticker: str):
+    from monitor import remove_ticker_from_portfolio
+    ok = remove_ticker_from_portfolio(portfolio_id, ticker.upper())
+    return {"ok": ok}
+
+
 @app.get("/briefing")
 def briefing_page():
     with open(os.path.join(FRONTEND_DIR, "briefing.html"), encoding="utf-8") as f:

@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Drys Capital · Monitor de Carteira</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    /* ── Monitor-specific overrides ── */
+    .monitor-layout {
+      display: flex;
+      height: calc(100vh - 52px);
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ── */
+    .mon-sidebar {
+      width: 260px;
+      flex-shrink: 0;
+      border-right: 1px solid var(--border);
+      background: var(--surface-3);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .mon-sidebar-header {
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .mon-portfolio-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px;
+      letter-spacing: 0.14em;
+      color: var(--text-3);
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+
+    .mon-portfolio-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .mon-ticker-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .mon-ticker-card {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.12s;
+      border: 1px solid transparent;
+    }
+    .mon-ticker-card:hover { background: var(--surface-2); }
+    .mon-ticker-card.active {
+      background: var(--blue-dim);
+      border-color: var(--blue-border);
+    }
+
+    .mon-tc-symbol {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      min-width: 52px;
+    }
+
+    .mon-tc-price {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text-2);
+      flex: 1;
+    }
+
+    .mon-tc-change {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+    .mon-tc-change.pos { color: var(--green); }
+    .mon-tc-change.neg { color: var(--red); }
+    .mon-tc-change.neu { color: var(--text-3); }
+
+    .mon-tc-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .mon-tc-dot.pos { background: var(--green); }
+    .mon-tc-dot.neg { background: var(--red); }
+    .mon-tc-dot.neu { background: var(--text-3); }
+
+    /* Add ticker */
+    .mon-add-row {
+      padding: 10px 8px;
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+      display: flex;
+      gap: 6px;
+    }
+    .mon-add-input {
+      flex: 1;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      padding: 6px 8px;
+      outline: none;
+      text-transform: uppercase;
+    }
+    .mon-add-input:focus { border-color: var(--blue); }
+    .mon-add-btn {
+      background: var(--blue);
+      border: none;
+      border-radius: 4px;
+      color: #fff;
+      font-size: 16px;
+      line-height: 1;
+      padding: 0 10px;
+      cursor: pointer;
+      transition: background 0.12s;
+    }
+    .mon-add-btn:hover { background: #2563eb; }
+
+    /* ── Main detail area ── */
+    .mon-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    /* Top bar */
+    .mon-topbar {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 10px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+
+    .mon-topbar-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-2);
+      letter-spacing: 0.1em;
+    }
+
+    .mon-date {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text-3);
+    }
+
+    .mon-refresh-btn {
+      margin-left: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      padding: 5px 14px;
+      background: transparent;
+      border: 1px solid var(--border-2);
+      border-radius: 4px;
+      color: var(--text-2);
+      cursor: pointer;
+      transition: border-color 0.12s, color 0.12s;
+    }
+    .mon-refresh-btn:hover { border-color: var(--blue); color: var(--blue); }
+    .mon-refresh-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Detail scroll area */
+    .mon-detail {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 28px;
+    }
+
+    /* Empty state */
+    .mon-empty {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      color: var(--text-3);
+    }
+    .mon-empty-icon { font-size: 40px; opacity: 0.2; }
+    .mon-empty p { font-size: 13px; }
+
+    /* ── Detail sections ── */
+    .mon-hero {
+      display: flex;
+      align-items: flex-start;
+      gap: 20px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .mon-hero-left { flex: 1; min-width: 200px; }
+
+    .mon-hero-ticker {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1;
+    }
+
+    .mon-hero-name {
+      font-size: 13px;
+      color: var(--text-2);
+      margin-top: 3px;
+    }
+
+    .mon-hero-price {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 28px;
+      font-weight: 600;
+      color: var(--text);
+      margin-top: 10px;
+      line-height: 1;
+    }
+
+    .mon-hero-change {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+      font-weight: 600;
+      margin-top: 4px;
+    }
+    .mon-hero-change.pos { color: var(--green); }
+    .mon-hero-change.neg { color: var(--red); }
+    .mon-hero-change.neu { color: var(--text-3); }
+
+    /* Delta box (vs yesterday) */
+    .mon-delta-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 18px;
+      min-width: 200px;
+      flex-shrink: 0;
+    }
+
+    .mon-delta-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px;
+      letter-spacing: 0.14em;
+      color: var(--text-3);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .mon-delta-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+
+    .mon-delta-key {
+      font-size: 12px;
+      color: var(--text-2);
+    }
+
+    .mon-delta-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .mon-delta-val.pos { color: var(--green); }
+    .mon-delta-val.neg { color: var(--red); }
+
+    /* Multiples row */
+    .mon-multiples {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+
+    .mon-pill {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      padding: 3px 10px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      color: var(--text-2);
+    }
+    .mon-pill strong { color: var(--blue); }
+
+    /* Section headers */
+    .mon-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+
+    .mon-section-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 14px;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .mon-section-accent {
+      width: 3px;
+      height: 13px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+    .mon-section-accent.blue   { background: var(--blue); }
+    .mon-section-accent.green  { background: var(--green); }
+    .mon-section-accent.amber  { background: var(--amber); }
+    .mon-section-accent.purple { background: var(--purple); }
+
+    .mon-section-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-2);
+    }
+
+    .mon-section-body {
+      padding: 14px 16px;
+    }
+
+    /* AI summary */
+    .mon-ai-text {
+      font-size: 13.5px;
+      color: var(--text-2);
+      line-height: 1.65;
+    }
+
+    /* News list */
+    .mon-news-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .mon-news-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 8px 10px;
+      background: var(--surface-2);
+      border-radius: 5px;
+      border-left: 2px solid var(--border-2);
+      text-decoration: none;
+      transition: border-color 0.12s;
+    }
+    .mon-news-item:hover { border-left-color: var(--blue); }
+
+    .mon-news-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--blue);
+      flex-shrink: 0;
+      margin-top: 6px;
+    }
+
+    .mon-news-body { flex: 1; min-width: 0; }
+
+    .mon-news-title {
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--blue);
+      text-decoration: none;
+      line-height: 1.4;
+      display: block;
+    }
+    .mon-news-title:hover { text-decoration: underline; }
+
+    .mon-news-snippet {
+      font-size: 11.5px;
+      color: var(--text-3);
+      margin-top: 2px;
+      line-height: 1.4;
+    }
+
+    /* Sparkline */
+    .mon-sparkline-wrap {
+      overflow-x: auto;
+    }
+
+    .mon-sparkline svg {
+      display: block;
+    }
+
+    /* History table */
+    .mon-hist-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .mon-hist-table th {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      text-align: left;
+      padding: 0 10px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .mon-hist-table td {
+      font-size: 12px;
+      padding: 7px 10px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-2);
+      vertical-align: top;
+    }
+
+    .mon-hist-table tr:last-child td { border-bottom: none; }
+
+    .mon-hist-table td:first-child {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text-3);
+      white-space: nowrap;
+    }
+
+    .mon-hist-price {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .mon-hist-change {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .mon-hist-change.pos { color: var(--green); }
+    .mon-hist-change.neg { color: var(--red); }
+    .mon-hist-change.neu { color: var(--text-3); }
+
+    .mon-hist-summary {
+      font-size: 11.5px;
+      color: var(--text-3);
+      line-height: 1.4;
+      max-width: 400px;
+    }
+
+    /* Loading spinner */
+    .mon-loading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 20px 0;
+      color: var(--text-3);
+      font-size: 13px;
+    }
+
+    .mon-spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--border-2);
+      border-top-color: var(--blue);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Refresh status */
+    .mon-refresh-status {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: var(--text-3);
+      margin-left: 6px;
+    }
+
+    /* Remove btn */
+    .mon-remove-btn {
+      background: none;
+      border: none;
+      color: var(--text-3);
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 1;
+      padding: 2px 4px;
+      border-radius: 3px;
+      transition: color 0.12s, background 0.12s;
+      flex-shrink: 0;
+    }
+    .mon-remove-btn:hover { color: var(--red); background: var(--red-dim); }
+
+    @media (max-width: 768px) {
+      .mon-sidebar { width: 100%; height: auto; max-height: 40vh; border-right: none; border-bottom: 1px solid var(--border); }
+      .monitor-layout { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">C<span>ORTIQ</span></div>
+  <div class="header-subtitle">Monitor de Carteira</div>
+  <a href="/" class="header-brief-link">← Copilot</a>
+</header>
+
+<div class="monitor-layout">
+
+  <!-- ── SIDEBAR ── -->
+  <aside class="mon-sidebar">
+    <div class="mon-sidebar-header">
+      <div class="mon-portfolio-label">Portfólio</div>
+      <div class="mon-portfolio-name" id="mon-portfolio-name">Carregando...</div>
+    </div>
+
+    <div class="mon-ticker-list" id="mon-ticker-list">
+      <!-- populated by JS -->
+    </div>
+
+    <div class="mon-add-row">
+      <input class="mon-add-input" id="mon-add-input" type="text"
+             placeholder="TICKER" maxlength="6" autocomplete="off" />
+      <button class="mon-add-btn" id="mon-add-btn" type="button" title="Adicionar ticker">+</button>
+    </div>
+  </aside>
+
+  <!-- ── MAIN ── -->
+  <main class="mon-main">
+    <div class="mon-topbar">
+      <span class="mon-topbar-title">MONITOR DIÁRIO</span>
+      <span class="mon-date" id="mon-date"></span>
+      <span class="mon-refresh-status" id="mon-refresh-status"></span>
+      <button class="mon-refresh-btn" id="mon-refresh-btn" type="button">↺ Atualizar Tudo</button>
+    </div>
+
+    <div class="mon-detail" id="mon-detail">
+      <div class="mon-empty">
+        <div class="mon-empty-icon">◈</div>
+        <p>Selecione um ativo para ver o histórico</p>
+      </div>
+    </div>
+  </main>
+
+</div>
+
+<script>
+/* ── Monitor CRM — app ── */
+
+const $ = id => document.getElementById(id);
+let portfolioId = 'carteira-principal';
+let allTickers  = [];
+let activeTicker = null;
+
+// ── Init ──────────────────────────────────────────────────
+(async function init() {
+  $('mon-date').textContent = new Date().toLocaleDateString('pt-BR', {
+    weekday: 'long', day: '2-digit', month: 'long', year: 'numeric'
+  });
+
+  await loadTickers();
+
+  $('mon-refresh-btn').addEventListener('click', refreshAll);
+
+  $('mon-add-btn').addEventListener('click', addTicker);
+  $('mon-add-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') addTicker();
+  });
+})();
+
+// ── Load tickers list ─────────────────────────────────────
+async function loadTickers() {
+  try {
+    const res = await fetch('/api/monitor/tickers');
+    allTickers = await res.json();
+
+    // Set portfolio name from first ticker
+    const first = allTickers[0];
+    if (first) {
+      $('mon-portfolio-name').textContent = first.portfolio_name || 'Carteira Principal';
+      portfolioId = first.portfolio_id || 'carteira-principal';
+    }
+
+    renderSidebar();
+  } catch (e) {
+    $('mon-ticker-list').innerHTML = '<div style="padding:16px;color:var(--text-3);font-size:12px;">Erro ao carregar</div>';
+  }
+}
+
+// ── Sidebar ───────────────────────────────────────────────
+function renderSidebar() {
+  const list = $('mon-ticker-list');
+  if (!allTickers.length) {
+    list.innerHTML = '<div style="padding:16px;color:var(--text-3);font-size:12px;">Nenhum ativo. Adicione abaixo.</div>';
+    return;
+  }
+
+  list.innerHTML = allTickers.map(item => {
+    const snap = item.today;
+    const price = snap?.price || '—';
+    const chg   = snap?.change_pct || snap?.change_pct_vs_prev;
+    const chgNum = parseFloat(String(chg || '0').replace('%',''));
+    const cls   = chgNum > 0 ? 'pos' : chgNum < 0 ? 'neg' : 'neu';
+    const chgStr = chg ? (chgNum > 0 ? '+' : '') + (typeof chg === 'number' ? chg.toFixed(2) + '%' : chg) : '—';
+    const isActive = item.ticker === activeTicker;
+
+    return `
+      <div class="mon-ticker-card${isActive ? ' active' : ''}"
+           data-ticker="${escH(item.ticker)}"
+           onclick="openTicker('${escH(item.ticker)}')">
+        <div class="mon-tc-dot ${cls}"></div>
+        <div class="mon-tc-symbol">${escH(item.ticker)}</div>
+        <div class="mon-tc-price">${escH(price)}</div>
+        <div class="mon-tc-change ${cls}">${escH(chgStr)}</div>
+        <button class="mon-remove-btn" title="Remover"
+                onclick="event.stopPropagation(); removeTicker('${escH(item.ticker)}')">×</button>
+      </div>`;
+  }).join('');
+}
+
+// ── Open ticker detail ────────────────────────────────────
+async function openTicker(ticker) {
+  activeTicker = ticker;
+  renderSidebar();
+
+  const detail = $('mon-detail');
+  detail.innerHTML = `<div class="mon-loading"><div class="mon-spinner"></div> Carregando ${escH(ticker)}...</div>`;
+
+  try {
+    const res  = await fetch(`/api/monitor/ticker/${ticker}`);
+    const data = await res.json();
+    renderDetail(data);
+  } catch (e) {
+    detail.innerHTML = `<div style="color:var(--red);padding:20px;">Erro ao carregar dados de ${escH(ticker)}</div>`;
+  }
+}
+
+// ── Render detail ─────────────────────────────────────────
+function renderDetail(data) {
+  const snap    = data.today || (data.history && data.history[0]) || {};
+  const history = data.history || [];
+  const ticker  = data.ticker;
+
+  const priceRaw = snap.price_raw;
+  const prevRaw  = snap.price_prev_raw || snap.price_raw;
+  const chgPct   = snap.change_pct_vs_prev ?? parseFloat(String(snap.change_pct || '0').replace('%',''));
+  const chgAbs   = snap.change_abs_vs_prev;
+  const cls      = chgPct > 0.01 ? 'pos' : chgPct < -0.01 ? 'neg' : 'neu';
+  const arrow    = chgPct > 0.01 ? '▲' : chgPct < -0.01 ? '▼' : '—';
+
+  const prevDate = snap.prev_date
+    ? new Date(snap.prev_date + 'T12:00:00').toLocaleDateString('pt-BR', {day:'2-digit',month:'2-digit'})
+    : 'ontem';
+
+  let html = `
+    <!-- Hero -->
+    <div class="mon-hero">
+      <div class="mon-hero-left">
+        <div class="mon-hero-ticker">${escH(ticker)}</div>
+        <div class="mon-hero-name">${escH(snap.name || '')}</div>
+        <div class="mon-hero-price">${escH(snap.price || '—')}</div>
+        <div class="mon-hero-change ${cls}">
+          ${arrow} ${chgPct != null ? (chgPct > 0 ? '+' : '') + chgPct.toFixed(2) + '%' : '—'}
+          <span style="font-weight:400;color:var(--text-3);font-size:11px;margin-left:6px;">hoje (intraday)</span>
+        </div>
+      </div>
+
+      <!-- Delta box -->
+      <div class="mon-delta-box">
+        <div class="mon-delta-label">Variação vs ${prevDate}</div>
+        <div class="mon-delta-row">
+          <span class="mon-delta-key">Fechamento anterior</span>
+          <span class="mon-delta-val">${prevRaw ? 'R$ ' + prevRaw.toFixed(2) : '—'}</span>
+        </div>
+        <div class="mon-delta-row">
+          <span class="mon-delta-key">Hoje</span>
+          <span class="mon-delta-val">${priceRaw ? 'R$ ' + priceRaw.toFixed(2) : '—'}</span>
+        </div>
+        <div class="mon-delta-row" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
+          <span class="mon-delta-key">Δ Absoluto</span>
+          <span class="mon-delta-val ${cls}">
+            ${chgAbs != null ? (chgAbs > 0 ? '+' : '') + 'R$ ' + chgAbs.toFixed(2) : '—'}
+          </span>
+        </div>
+        <div class="mon-delta-row">
+          <span class="mon-delta-key">Δ Percentual</span>
+          <span class="mon-delta-val ${cls}">
+            ${chgPct != null ? (chgPct > 0 ? '+' : '') + chgPct.toFixed(2) + '%' : '—'}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Multiples -->
+    <div class="mon-multiples">
+      ${pill('P/L', snap.pe_trailing)}
+      ${pill('EV/EBITDA', snap.ev_ebitda)}
+      ${pill('P/VP', snap.pb)}
+      ${pill('DY', snap.div_yield)}
+      ${pill('Mktcap', snap.market_cap)}
+      ${pill('52w H', snap.week_52_high)}
+      ${pill('52w L', snap.week_52_low)}
+      ${pill('Margem', snap.net_margin)}
+    </div>`;
+
+  // Sparkline
+  if (history.length >= 2) {
+    const prices = history.map(h => h.price_raw).filter(Boolean).reverse();
+    html += `
+      <div class="mon-section" style="margin-bottom:12px;">
+        <div class="mon-section-head">
+          <div class="mon-section-accent blue"></div>
+          <div class="mon-section-title">Histórico de Preço — ${history.length} dias</div>
+        </div>
+        <div class="mon-section-body mon-sparkline-wrap">
+          ${sparklineSvg(prices)}
+        </div>
+      </div>`;
+  }
+
+  // AI Summary
+  if (snap.ai_summary) {
+    html += `
+      <div class="mon-section">
+        <div class="mon-section-head">
+          <div class="mon-section-accent purple"></div>
+          <div class="mon-section-title">Resumo de Hoje · IA</div>
+        </div>
+        <div class="mon-section-body">
+          <p class="mon-ai-text">${escH(snap.ai_summary)}</p>
+        </div>
+      </div>`;
+  }
+
+  // News
+  if (snap.news && snap.news.length) {
+    const newsHtml = snap.news.map(n => `
+      <div class="mon-news-item">
+        <div class="mon-news-dot"></div>
+        <div class="mon-news-body">
+          <a href="${escH(n.url)}" target="_blank" rel="noopener" class="mon-news-title">${escH(n.title)}</a>
+          ${n.snippet ? `<div class="mon-news-snippet">${escH(n.snippet)}</div>` : ''}
+        </div>
+      </div>`).join('');
+
+    html += `
+      <div class="mon-section">
+        <div class="mon-section-head">
+          <div class="mon-section-accent amber"></div>
+          <div class="mon-section-title">Notícias de Hoje</div>
+        </div>
+        <div class="mon-section-body">
+          <div class="mon-news-list">${newsHtml}</div>
+        </div>
+      </div>`;
+  }
+
+  // History table
+  if (history.length) {
+    const rows = history.map(h => {
+      const dateStr = h.date
+        ? new Date(h.date + 'T12:00:00').toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit', year:'2-digit'})
+        : '—';
+      const p   = h.price_raw;
+      const c   = h.change_pct_vs_prev;
+      const cls2 = c > 0.01 ? 'pos' : c < -0.01 ? 'neg' : 'neu';
+      const chgStr = c != null ? (c > 0 ? '+' : '') + c.toFixed(2) + '%' : '—';
+      const summ = h.ai_summary || '';
+      return `<tr>
+        <td>${dateStr}</td>
+        <td><span class="mon-hist-price">${p ? 'R$ ' + p.toFixed(2) : '—'}</span></td>
+        <td><span class="mon-hist-change ${cls2}">${chgStr}</span></td>
+        <td><div class="mon-hist-summary">${escH(summ.slice(0, 120))}${summ.length > 120 ? '…' : ''}</div></td>
+      </tr>`;
+    }).join('');
+
+    html += `
+      <div class="mon-section">
+        <div class="mon-section-head">
+          <div class="mon-section-accent green"></div>
+          <div class="mon-section-title">Histórico Diário</div>
+        </div>
+        <div class="mon-section-body" style="padding:0;">
+          <table class="mon-hist-table">
+            <thead><tr>
+              <th>Data</th><th>Preço</th><th>Variação</th><th>Resumo</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  // If no data yet
+  if (!snap.price && !snap.ai_summary) {
+    html += `
+      <div style="padding:24px;text-align:center;color:var(--text-3);font-size:13px;">
+        Sem dados para hoje.
+        <button onclick="refreshTicker('${escH(ticker)}')"
+                style="margin-left:10px;background:var(--blue);border:none;border-radius:4px;
+                       color:#fff;font-size:12px;padding:5px 12px;cursor:pointer;">
+          Buscar agora
+        </button>
+      </div>`;
+  }
+
+  $('mon-detail').innerHTML = html;
+}
+
+// ── Sparkline SVG ─────────────────────────────────────────
+function sparklineSvg(prices) {
+  if (prices.length < 2) return '';
+  const W = 600, H = 60, pad = 4;
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  const range = max - min || 1;
+
+  const pts = prices.map((p, i) => {
+    const x = pad + (i / (prices.length - 1)) * (W - pad * 2);
+    const y = pad + (1 - (p - min) / range) * (H - pad * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+
+  const lastP = prices[prices.length - 1];
+  const firstP = prices[0];
+  const color = lastP >= firstP ? 'var(--green)' : 'var(--red)';
+
+  // Area fill
+  const areaPoints = pts.join(' ') + ` ${(W - pad).toFixed(1)},${H} ${pad},${H}`;
+
+  return `
+    <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}"
+         style="overflow:visible;">
+      <defs>
+        <linearGradient id="spk-grad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${color}" stop-opacity="0.15"/>
+          <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <polygon points="${areaPoints}" fill="url(#spk-grad)"/>
+      <polyline points="${pts.join(' ')}"
+                fill="none" stroke="${color}" stroke-width="1.5"
+                stroke-linejoin="round" stroke-linecap="round"/>
+      <!-- Last point dot -->
+      <circle cx="${pts[pts.length-1].split(',')[0]}"
+              cy="${pts[pts.length-1].split(',')[1]}"
+              r="3" fill="${color}"/>
+    </svg>`;
+}
+
+// ── Refresh ───────────────────────────────────────────────
+async function refreshAll() {
+  const btn = $('mon-refresh-btn');
+  const status = $('mon-refresh-status');
+  btn.disabled = true;
+  btn.textContent = '↻ Atualizando...';
+  status.textContent = '';
+
+  try {
+    const tickers = allTickers.map(t => t.ticker);
+    for (let i = 0; i < tickers.length; i++) {
+      status.textContent = `[${i+1}/${tickers.length}] ${tickers[i]}`;
+      await fetch(`/api/monitor/refresh/${tickers[i]}`, { method: 'POST' });
+    }
+    status.textContent = '✓ Atualizado';
+    await loadTickers();
+    if (activeTicker) await openTicker(activeTicker);
+  } catch (e) {
+    status.textContent = 'Erro';
+  }
+
+  btn.disabled = false;
+  btn.textContent = '↺ Atualizar Tudo';
+  setTimeout(() => { status.textContent = ''; }, 3000);
+}
+
+window.refreshTicker = async function(ticker) {
+  const detail = $('mon-detail');
+  detail.innerHTML = `<div class="mon-loading"><div class="mon-spinner"></div> Buscando ${escH(ticker)}...</div>`;
+  await fetch(`/api/monitor/refresh/${ticker}?force=true`, { method: 'POST' });
+  await loadTickers();
+  await openTicker(ticker);
+};
+
+// ── Add / Remove ticker ───────────────────────────────────
+async function addTicker() {
+  const input = $('mon-add-input');
+  const ticker = input.value.trim().toUpperCase();
+  if (!ticker) return;
+  input.value = '';
+
+  await fetch('/api/monitor/ticker', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ ticker, portfolio_id: portfolioId })
+  });
+
+  await fetch(`/api/monitor/refresh/${ticker}`, { method: 'POST' });
+  await loadTickers();
+  openTicker(ticker);
+}
+
+window.removeTicker = async function(ticker) {
+  if (!confirm(`Remover ${ticker} da carteira?`)) return;
+  await fetch(`/api/monitor/ticker/${portfolioId}/${ticker}`, { method: 'DELETE' });
+  if (activeTicker === ticker) {
+    activeTicker = null;
+    $('mon-detail').innerHTML = `<div class="mon-empty">
+      <div class="mon-empty-icon">◈</div>
+      <p>Selecione um ativo</p>
+    </div>`;
+  }
+  await loadTickers();
+};
+
+// ── Helpers ───────────────────────────────────────────────
+function pill(label, val) {
+  if (!val) return '';
+  return `<div class="mon-pill">${escH(label)}: <strong>${escH(val)}</strong></div>`;
+}
+
+function escH(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
