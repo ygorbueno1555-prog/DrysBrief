@@ -772,13 +772,9 @@ function openHistoryDetail(key, mode) {
     historyView.querySelectorAll('.hist-card').forEach(c => c.classList.remove('active'));
   });
 
-  // Reanalisar — switch to analysis tab and run fresh (no cache flash)
+  // Reanalisar — pré-preenche o form e troca de aba, SEM auto-disparar análise
   $('hist-detail-rerun').addEventListener('click', () => {
-    // Switch to the right mode
-    if (currentMode !== mode) {
-      document.querySelector(`.mode-tab[data-mode="${mode}"]`)?.click();
-    }
-    // Fill form
+    // Preenche form ANTES de trocar de aba
     if (mode === 'equity') {
       $('ticker').value  = entry.key;
       $('thesis').value  = entry.thesis || '';
@@ -788,11 +784,8 @@ function openHistoryDetail(key, mode) {
       $('startup-url').value    = entry.url || '';
       $('startup-thesis').value = entry.thesis || '';
     }
-    // Start fresh analysis (after mode switch settles)
-    setTimeout(() => {
-      if (mode === 'equity') $('btn-equity').click();
-      else $('btn-startup').click();
-    }, 30);
+    // Troca para a aba correta — usuário decide quando clicar em ANALISAR
+    document.querySelector(`.mode-tab[data-mode="${mode}"]`)?.click();
   });
 }
 
