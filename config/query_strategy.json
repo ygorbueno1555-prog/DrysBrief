@@ -1,0 +1,5 @@
+{
+  "max_queries": 3,
+  "priority_stock": ["financials", "valuation", "recent_news", "catalysts", "risks"],
+  "priority_startup": ["traction", "market", "team", "competitors", "red_flags"]
+}

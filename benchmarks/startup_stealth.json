@@ -1,0 +1,9 @@
+{
+  "id": "startup_stealth",
+  "mode": "startup",
+  "input": {"startup_name": "Stealth AI startup", "website": ""},
+  "expected_sections": ["team", "market", "traction", "competitors", "red_flags"],
+  "expected_key_facts": [],
+  "expected_primary_source_domains": [],
+  "critical_gaps_if_missing": ["traction", "market", "team"]
+}

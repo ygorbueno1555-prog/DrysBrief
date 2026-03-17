@@ -167,6 +167,16 @@ def _get_model() -> str:
     return os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 
 
+def _load_critic_rules() -> dict:
+    import json
+    base = os.getenv("CORTIQ_CONFIG_DIR", os.path.join(os.path.dirname(__file__), "config"))
+    path = os.path.join(base, "critic_rules.json")
+    if not os.path.exists(path):
+        return {"max_bullets": 6}
+    with open(path, "r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
 async def stream_equity_report(
     results: List[Dict],
     ticker: str,
@@ -260,6 +270,58 @@ async def stream_startup_report(
                 yield text
     except Exception as e:
         yield f"\n\n## Erro na Análise\n{e}"
+
+
+async def generate_critic_notes(
+    mode: str,
+    report: str,
+    evidence: str,
+    evaluation: Dict,
+) -> str:
+    try:
+        client = _get_client()
+    except ValueError as e:
+        return f"Erro: {e}"
+
+    rules = _load_critic_rules()
+    max_bullets = rules.get("max_bullets", 6)
+    missing = ", ".join(evaluation.get("missing_sections", [])) or "nenhuma"
+
+    prompt = f"""
+Você é um revisor crítico de research.
+
+Contexto:
+- mode: {mode}
+- coverage_score: {evaluation.get('coverage_score')}
+- evidence_score: {evaluation.get('evidence_score')}
+- primary_source_ratio: {evaluation.get('primary_source_ratio')}
+- missing_sections: {missing}
+
+Tarefa:
+- Aponte afirmações sem evidência forte
+- Indique se a confiança parece superestimada
+- Sinalize seções fracas
+- Sugira até 2 queries extras
+
+Responda em até {max_bullets} bullets curtos.
+
+Relatório:
+{report}
+
+Evidências:
+{evidence}
+""".strip()
+
+    try:
+        msg = await client.messages.create(
+            model=_get_model(),
+            max_tokens=400,
+            temperature=0.2,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return msg.content[0].text.strip()
+    except Exception as e:
+        return f"Erro critic: {e}"
 
 
 BRIEF_ENTRY_PROMPT = """\

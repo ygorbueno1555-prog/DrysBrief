@@ -1,0 +1,11 @@
+{
+  "id": "startup_stripe",
+  "mode": "startup",
+  "input": {"startup_name": "Stripe", "website": "stripe.com"},
+  "expected_sections": ["team", "market", "traction", "competitors", "red_flags"],
+  "expected_key_facts": ["funding", "valuation", "payments"],
+  "expected_primary_source_domains": ["stripe.com"],
+  "critical_gaps_if_missing": ["market", "traction"],
+  "anti_patterns": ["valuation_without_source"],
+  "optional_checks": ["critic_mentions_missing_data"]
+}
