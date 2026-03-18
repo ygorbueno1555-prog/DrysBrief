@@ -229,3 +229,110 @@ async def refresh_all(force: bool = False) -> List[Dict]:
         return []
     results = await asyncio.gather(*[refresh_ticker(t, force) for t in tickers])
     return list(results)
+
+
+# ── Price Alerts ───────────────────────────────────────────
+
+def _send_price_alert_email(portfolio: dict, triggered: list) -> bool:
+    """Send price movement alert email via Resend."""
+    api_key = os.environ.get("RESEND_API_KEY", "")
+    recipients = portfolio.get("alert_recipients", [])
+    if not api_key or not recipients:
+        return False
+
+    try:
+        import resend
+        resend.api_key = api_key
+        from_addr = os.environ.get("BRIEF_FROM_EMAIL", "onboarding@resend.dev")
+
+        threshold = portfolio.get("price_alert_threshold_pct", 3.0)
+        date_str = date.today().strftime("%d/%m/%Y")
+        portfolio_name = portfolio.get("portfolio_name", "Carteira")
+
+        items_html = ""
+        for item in triggered:
+            chg = item["change_pct"]
+            color = "#16a34a" if chg > 0 else "#dc2626"
+            arrow = "▲" if chg > 0 else "▼"
+            sign = "+" if chg > 0 else ""
+            ai = item.get("ai_summary", "")
+            items_html += (
+                f"<div style='margin:12px 0;padding:14px;background:#f8fafc;"
+                f"border-radius:6px;border-left:3px solid {color}'>"
+                f"<strong style='font-family:monospace;font-size:15px'>{item['ticker']}</strong>"
+                f"<span style='font-family:monospace;color:{color};font-weight:600;"
+                f"margin-left:12px'>{arrow} {sign}{chg:.2f}%</span>"
+                f"<div style='font-size:13px;color:#64748b;margin-top:4px'>{item.get('price','')}</div>"
+                + (f"<div style='font-size:12px;color:#94a3b8;margin-top:4px'>{ai}</div>" if ai else "")
+                + "</div>"
+            )
+
+        html = (
+            f"<div style='max-width:600px;margin:0 auto;padding:24px;font-family:sans-serif'>"
+            f"<h2 style='color:#0f172a'>🔔 Alerta de Preço — {portfolio_name}</h2>"
+            f"<p style='color:#475569'><strong>Data:</strong> {date_str} &nbsp;|&nbsp; "
+            f"<strong>Threshold:</strong> ±{threshold}%</p>"
+            f"<hr style='border:none;border-top:1px solid #e2e8f0'>"
+            f"{items_html}"
+            f"<p style='font-size:11px;color:#94a3b8;margin-top:24px'>Gerado automaticamente pelo Cortiq Decision Copilot</p>"
+            f"</div>"
+        )
+
+        resend.Emails.send({
+            "from": f"Cortiq Alertas <{from_addr}>",
+            "to": recipients,
+            "subject": (
+                f"🔔 Cortiq — {portfolio_name} — "
+                f"{len(triggered)} ativo(s) com variação > ±{threshold}% — {date_str}"
+            ),
+            "html": html,
+        })
+        return True
+    except Exception as e:
+        print(f"[monitor] price alert email error: {e}")
+        return False
+
+
+async def check_and_send_price_alerts(portfolio_id: Optional[str] = None) -> List[Dict]:
+    """Check all portfolios for tickers with |change_pct_vs_prev| >= threshold.
+    Sends email if auto_send_alerts=True and alert_recipients configured.
+    Returns list of portfolio alert results."""
+    wl = load_watchlist_raw()
+    portfolios = wl.get("portfolios", [])
+    if portfolio_id:
+        portfolios = [p for p in portfolios if p.get("id") == portfolio_id]
+
+    today = date.today()
+    all_results = []
+
+    for portfolio in portfolios:
+        threshold = float(portfolio.get("price_alert_threshold_pct", 3.0))
+        triggered = []
+
+        for equity in portfolio.get("equity", []):
+            ticker = equity["ticker"].upper()
+            snap = load_snapshot(ticker, today)
+            if not snap:
+                continue
+            change_pct = snap.get("change_pct_vs_prev")
+            if change_pct is not None and abs(change_pct) >= threshold:
+                triggered.append({
+                    "ticker": ticker,
+                    "change_pct": change_pct,
+                    "price": snap.get("price"),
+                    "ai_summary": snap.get("ai_summary", ""),
+                })
+
+        email_sent = False
+        if triggered and portfolio.get("auto_send_alerts") and portfolio.get("alert_recipients"):
+            email_sent = _send_price_alert_email(portfolio, triggered)
+
+        all_results.append({
+            "portfolio_id": portfolio.get("id"),
+            "portfolio_name": portfolio.get("portfolio_name", ""),
+            "threshold": threshold,
+            "triggered": triggered,
+            "email_sent": email_sent,
+        })
+
+    return all_results

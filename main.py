@@ -1,6 +1,7 @@
 """main.py — Cortiq Decision Copilot v2
 FastAPI server with SSE streaming, daily briefing scheduler, and draft review API.
 """
+import asyncio
 import json
 import os
 from contextlib import asynccontextmanager
@@ -34,8 +35,13 @@ def _setup_scheduler(app):
         except Exception:
             pass
 
+        from monitor import check_and_send_price_alerts
         scheduler = AsyncIOScheduler(timezone=ZoneInfo("America/Sao_Paulo"))
         scheduler.add_job(run_watchlist_briefing, "cron", hour=briefing_hour, minute=0)
+        scheduler.add_job(
+            lambda: asyncio.ensure_future(check_and_send_price_alerts()),
+            "interval", hours=1, id="price_alerts"
+        )
         app.state.scheduler = scheduler
         return scheduler
     except Exception as e:
@@ -149,6 +155,15 @@ async def api_add_ticker(body: dict):
         return {"ok": False, "error": "ticker required"}
     ok = add_ticker_to_portfolio(portfolio_id, ticker, thesis)
     return {"ok": ok}
+
+
+@app.post("/api/monitor/check-alerts")
+async def api_check_price_alerts(portfolio_id: Optional[str] = None):
+    """Check all tickers for price moves >= threshold. Sends email if configured."""
+    from monitor import check_and_send_price_alerts
+    result = await check_and_send_price_alerts(portfolio_id)
+    total_triggered = sum(len(r["triggered"]) for r in result)
+    return {"ok": True, "total_triggered": total_triggered, "portfolios": result}
 
 
 @app.delete("/api/monitor/ticker/{portfolio_id}/{ticker}")

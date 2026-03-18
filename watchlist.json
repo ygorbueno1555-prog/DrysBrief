@@ -9,6 +9,7 @@
       "recipients": [],
       "alert_recipients": [],
       "auto_send_alerts": false,
+      "price_alert_threshold_pct": 3.0,
       "equity": [
         {"ticker": "VALE3", "thesis": "Recuperação da demanda chinesa por minério de ferro"},
         {"ticker": "PETR4", "thesis": ""},
