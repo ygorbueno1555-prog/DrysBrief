@@ -58,6 +58,7 @@ def _fetch_equity_data(ticker: str) -> dict:
             "net_margin": f"{info.get('profitMargins', 0)*100:.1f}%" if info.get("profitMargins") else None,
             "sector": info.get("sector") or info.get("sectorDisp"),
             "name": info.get("longName") or info.get("shortName"),
+            "previous_close_raw": info.get("previousClose") or info.get("regularMarketPreviousClose"),
         }
     except Exception:
         return {}

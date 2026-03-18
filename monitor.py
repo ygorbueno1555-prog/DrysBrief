@@ -194,14 +194,22 @@ async def refresh_ticker(ticker: str, force: bool = False) -> Dict:
     except Exception:
         pass
 
-    price_prev_raw = prev_snap.get("price_raw") if prev_snap else None
+    # Fallback: use yfinance previousClose when no stored snapshot exists
+    yf_prev_raw = price_data.get("previous_close_raw")
+    price_prev_raw = (
+        prev_snap.get("price_raw") if prev_snap
+        else yf_prev_raw
+    )
+    prev_date = (
+        prev_snap.get("date") if prev_snap
+        else (today - timedelta(days=1)).isoformat()
+    )
     change_abs = round(price_raw - price_prev_raw, 2) if price_raw and price_prev_raw else None
     change_pct_vs_prev = (
         round((change_abs / price_prev_raw) * 100, 2)
         if change_abs is not None and price_prev_raw
         else None
     )
-    prev_date = prev_snap.get("date") if prev_snap else None
 
     ai_summary = await _ai_daily_summary(ticker, price_data, news)
 
