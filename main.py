@@ -21,6 +21,7 @@ from agent import run_equity_analysis, run_startup_analysis
 from briefing_runner import (
     run_watchlist_briefing, load_drafts, load_draft, save_draft, send_brief_email
 )
+from chat import load_latest_artifact, stream_chat, generate_devil, generate_conviction_breakdown
 
 # ── Scheduler ────────────────────────────────────────────
 def _setup_scheduler(app):
@@ -66,40 +67,46 @@ app = FastAPI(title="Cortiq Decision Copilot", lifespan=lifespan)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 STATIC_DIR = os.path.join(FRONTEND_DIR, "static")
-DATA_DIR = os.path.join(BASE_DIR, "data")
-HISTORY_FILE = os.path.join(DATA_DIR, "analysis_history.json")
-PORTFOLIO_PATH = os.path.join(DATA_DIR, "portfolio.json")
-PORTFOLIO_HISTORY_PATH = os.path.join(DATA_DIR, "portfolio_history.json")
-MAX_PORTFOLIO_HISTORY = 100
+
+# PERSISTENT_DATA_DIR: set to Railway volume mount path (e.g. /data) to persist
+# artifacts, history and drafts across deploys. Falls back to local ./data dir.
+_PERSIST = os.environ.get("PERSISTENT_DATA_DIR", os.path.join(BASE_DIR, "data"))
+DATA_DIR               = _PERSIST
+HISTORY_FILE           = os.path.join(_PERSIST, "analysis_history.json")
+ARTIFACTS_DIR          = os.path.join(_PERSIST, "artifacts")
+DRAFTS_DIR             = os.path.join(_PERSIST, "drafts")
+PORTFOLIO_PATH         = os.path.join(_PERSIST, "portfolio.json")
+PORTFOLIO_HISTORY_PATH = os.path.join(_PERSIST, "portfolio_history.json")
+MAX_PORTFOLIO_HISTORY  = 100
+
+for _d in (_PERSIST, ARTIFACTS_DIR, DRAFTS_DIR):
+    os.makedirs(_d, exist_ok=True)
 
 # Lab loop state
 _lab_loop_state = {"running": False, "thread": None}
 
 # Lab mutation labels
 MUTATION_LABELS = {
-    "increase_primary_weight": ("Fontes primárias reforçadas", "Priorizamos fontes oficiais (B3, SEC, relatórios de RI) — análises mais fundamentadas em dados primários"),
-    "tighten_retry": ("Cobertura mais profunda", "Refinamos quando buscar dados adicionais — análises chegam mais completas"),
-    "loosen_retry": ("Velocidade otimizada", "Reduzimos buscas redundantes sem perder qualidade de cobertura"),
-    "boost_weak_coverage_weight": ("Tópicos escassos melhorados", "Melhoramos análise de seções com pouca evidência disponível no mercado"),
-    "reduce_weak_coverage_weight": ("Foco em profundidade", "Priorizamos qualidade sobre quantidade nos tópicos cobertos"),
-    "prioritize_traction_queries": ("Startups: tração em primeiro lugar", "Para startups, buscamos métricas reais de tração antes de qualquer outro dado"),
-    "decrease_coverage_weight": ("Evidência acima de cobertura", "Priorizamos qualidade das evidências sobre amplitude de cobertura"),
+    "increase_primary_weight":      ("Fontes primárias reforçadas", "Priorizamos fontes oficiais (B3, SEC, relatórios de RI) — análises mais fundamentadas em dados primários"),
+    "tighten_retry":                ("Cobertura mais profunda", "Refinamos quando buscar dados adicionais — análises chegam mais completas"),
+    "loosen_retry":                 ("Velocidade otimizada", "Reduzimos buscas redundantes sem perder qualidade de cobertura"),
+    "boost_weak_coverage_weight":   ("Tópicos escassos melhorados", "Melhoramos análise de seções com pouca evidência disponível no mercado"),
+    "reduce_weak_coverage_weight":  ("Foco em profundidade", "Priorizamos qualidade sobre quantidade nos tópicos cobertos"),
+    "prioritize_traction_queries":  ("Startups: tração em primeiro lugar", "Para startups, buscamos métricas reais de tração antes de qualquer outro dado"),
+    "decrease_coverage_weight":     ("Evidência acima de cobertura", "Priorizamos qualidade das evidências sobre amplitude de cobertura"),
 }
 
 def _load_portfolio() -> dict:
-    os.makedirs(DATA_DIR, exist_ok=True)
     if not os.path.exists(PORTFOLIO_PATH):
         return {"companies": []}
     with open(PORTFOLIO_PATH, encoding="utf-8") as f:
         return json.load(f)
 
 def _save_portfolio(data: dict):
-    os.makedirs(DATA_DIR, exist_ok=True)
     with open(PORTFOLIO_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 def _load_portfolio_history() -> list:
-    os.makedirs(DATA_DIR, exist_ok=True)
     if not os.path.exists(PORTFOLIO_HISTORY_PATH):
         return []
     with open(PORTFOLIO_HISTORY_PATH, encoding="utf-8") as f:
@@ -481,6 +488,97 @@ async def trigger_briefing(portfolio_id: Optional[str] = None):
         "count": len(drafts),
         "ids": [draft["id"] for draft in drafts],
         "primary_id": primary["id"] if primary else None,
+    }
+
+
+# ── Thesis Chat API ───────────────────────────────────────
+# ARTIFACTS_DIR already set above from PERSISTENT_DATA_DIR
+
+
+class ChatRequest(BaseModel):
+    mode: str          # equity | startup
+    key: str           # ticker or startup name
+    question: str
+    history: Optional[List[dict]] = []
+
+
+@app.post("/api/chat")
+async def chat_endpoint(body: ChatRequest):
+    """Stream a thesis debate response grounded in the analysis artifact."""
+    artifact = load_latest_artifact(body.mode, body.key.upper(), ARTIFACTS_DIR)
+    if not artifact:
+        # fallback: try lowercase (startup names)
+        artifact = load_latest_artifact(body.mode, body.key, ARTIFACTS_DIR)
+    if not artifact:
+        raise HTTPException(404, f"Nenhum artifact encontrado para '{body.key}'. Execute a análise primeiro.")
+
+    async def gen():
+        try:
+            async for chunk in stream_chat(artifact, body.question, body.history or []):
+                yield _sse("chunk", chunk)
+            yield _sse("done", "")
+        except Exception as e:
+            yield _sse("error", str(e))
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
+
+
+@app.get("/api/chat/devil/{mode}/{key}")
+async def devil_advocate(mode: str, key: str):
+    """Return the strongest counter-argument against the current verdict."""
+    artifact = load_latest_artifact(mode, key.upper(), ARTIFACTS_DIR)
+    if not artifact:
+        artifact = load_latest_artifact(mode, key, ARTIFACTS_DIR)
+    if not artifact:
+        raise HTTPException(404, f"Nenhum artifact encontrado para '{key}'.")
+
+    devil = await generate_devil(artifact)
+    return {
+        "devil": devil,
+        "verdict": artifact.get("verdict"),
+        "confidence": artifact.get("confidence"),
+        "key": artifact.get("key") or artifact.get("ticker"),
+        "generated_at": artifact.get("generated_at"),
+    }
+
+
+@app.get("/api/chat/conviction/{mode}/{key}")
+async def conviction_breakdown(mode: str, key: str):
+    """Return conviction score breakdown across 5 investment dimensions."""
+    artifact = load_latest_artifact(mode, key.upper(), ARTIFACTS_DIR)
+    if not artifact:
+        artifact = load_latest_artifact(mode, key, ARTIFACTS_DIR)
+    if not artifact:
+        raise HTTPException(404, f"Nenhum artifact encontrado para '{key}'.")
+
+    breakdown = await generate_conviction_breakdown(artifact)
+    return {
+        "breakdown": breakdown,
+        "verdict": artifact.get("verdict"),
+        "key": artifact.get("key") or artifact.get("ticker"),
+    }
+
+
+@app.get("/api/chat/artifact/{mode}/{key}")
+def get_artifact_summary(mode: str, key: str):
+    """Return a lightweight summary of the latest artifact (for UI context)."""
+    artifact = load_latest_artifact(mode, key.upper(), ARTIFACTS_DIR)
+    if not artifact:
+        artifact = load_latest_artifact(mode, key, ARTIFACTS_DIR)
+    if not artifact:
+        raise HTTPException(404, f"Nenhum artifact encontrado para '{key}'.")
+
+    return {
+        "key": artifact.get("key") or artifact.get("ticker"),
+        "mode": artifact.get("mode"),
+        "verdict": artifact.get("verdict"),
+        "confidence": artifact.get("confidence"),
+        "thesis": artifact.get("thesis"),
+        "generated_at": artifact.get("generated_at"),
+        "sources_count": len(artifact.get("sources", [])),
+        "queries_count": len(artifact.get("queries", [])),
+        "has_market_data": bool(artifact.get("market_data")),
     }
 
 

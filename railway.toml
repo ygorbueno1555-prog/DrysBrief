@@ -1,3 +1,10 @@
 [deploy]
 startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/health"
+
+# ── Persistent storage ─────────────────────────────────────
+# To preserve artifacts, history and drafts across deploys:
+# 1. Go to Railway dashboard → your service → Volumes
+# 2. Add a volume mounted at /data
+# 3. Add environment variable: PERSISTENT_DATA_DIR=/data
+# Without this, data lives in ./data (ephemeral, wiped on redeploy)

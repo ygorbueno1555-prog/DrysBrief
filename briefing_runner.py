@@ -12,7 +12,10 @@ from researcher import search_topic, deduplicate_results
 from reporter import generate_brief_entry
 
 SAO_PAULO = ZoneInfo("America/Sao_Paulo")
-DRAFTS_DIR = "drafts"
+DRAFTS_DIR = os.path.join(
+    os.environ.get("PERSISTENT_DATA_DIR", os.path.join(os.path.dirname(__file__), "data")),
+    "drafts"
+)
 
 EQUITY_QUERIES = lambda ticker: [
     f"{ticker} resultado financeiro EBITDA receita lucro 2025",

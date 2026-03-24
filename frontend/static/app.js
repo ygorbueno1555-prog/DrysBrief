@@ -128,6 +128,8 @@ function startAnalysis(url, label) {
   verdictBar.classList.add('visible');
   verdictTag.textContent  = label.toUpperCase();
   verdictTag.className    = 'verdict-tag blue';
+  const debateBtnStart = document.getElementById('btn-debate');
+  if (debateBtnStart) debateBtnStart.style.display = 'none';
   verdictMeta.textContent = '';
   verdictTime.textContent = '';
   reportContent.innerHTML = '<div class="streaming-cursor cursor-blink"></div>';
@@ -191,6 +193,10 @@ function startAnalysis(url, label) {
         confidence, extras
       );
     }
+
+    // Show Debate button once analysis is complete
+    const debateBtn = document.getElementById('btn-debate');
+    if (debateBtn && key) debateBtn.style.display = 'inline-flex';
   });
 
   currentES.addEventListener('error', e => {

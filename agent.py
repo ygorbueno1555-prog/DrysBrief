@@ -141,9 +141,11 @@ async def _gap_check(topic: str, mode: str, results: List[Dict]) -> List[str]:
 
 
 def _save_artifact(data: dict) -> str:
-    """Save analysis artifact as JSON."""
+    """Save analysis artifact to persistent storage."""
     try:
-        return save_analysis_artifact(data, base_dir=os.path.join(os.path.dirname(__file__), "artifacts"))
+        _persist = os.environ.get("PERSISTENT_DATA_DIR", os.path.join(os.path.dirname(__file__), "data"))
+        artifacts_dir = os.path.join(_persist, "artifacts")
+        return save_analysis_artifact(data, base_dir=artifacts_dir)
     except Exception:
         return ""
 

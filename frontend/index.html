@@ -112,6 +112,9 @@
         <div class="verdict-tag blue" id="verdict-tag">ANALISANDO</div>
         <div class="verdict-meta" id="verdict-meta"></div>
         <div class="verdict-time" id="verdict-time"></div>
+        <button class="btn-debate" id="btn-debate" type="button" style="display:none;" aria-label="Debater tese">
+          Debater tese →
+        </button>
       </div>
 
       <!-- Empty state -->
@@ -145,6 +148,44 @@
   </div>
 </div>
 
+<!-- ── CHAT DRAWER ────────────────────────────────────────── -->
+<div class="chat-overlay" id="chat-overlay" aria-hidden="true"></div>
+<div class="chat-drawer" id="chat-drawer" role="dialog" aria-label="Debate de tese" aria-hidden="true">
+  <div class="chat-drawer-header">
+    <div class="chat-drawer-title">
+      <span class="chat-drawer-icon">⬡</span>
+      <span id="chat-drawer-label">Debate de Tese</span>
+      <span class="chat-drawer-verdict" id="chat-drawer-verdict"></span>
+    </div>
+    <div class="chat-drawer-actions">
+      <button class="chat-btn-devil" id="btn-devil" type="button" title="Gerar Devil's Advocate">⚠ Devil's Advocate</button>
+      <button class="chat-btn-conviction" id="btn-conviction" type="button" title="Ver Conviction Breakdown">◎ Conviction</button>
+      <button class="chat-drawer-close" id="btn-chat-close" type="button" aria-label="Fechar chat">×</button>
+    </div>
+  </div>
+
+  <!-- Conviction breakdown panel -->
+  <div class="conviction-panel" id="conviction-panel" style="display:none;">
+    <div class="conviction-title">Conviction Breakdown</div>
+    <div class="conviction-bars" id="conviction-bars"></div>
+  </div>
+
+  <div class="chat-messages" id="chat-messages" role="log" aria-live="polite"></div>
+
+  <div class="chat-input-row">
+    <textarea
+      class="chat-input"
+      id="chat-input"
+      placeholder="Pergunte sobre a tese, riscos, valuation, bear case..."
+      rows="1"
+      aria-label="Mensagem para debate"
+    ></textarea>
+    <button class="chat-send" id="btn-chat-send" type="button" aria-label="Enviar">→</button>
+  </div>
+  <div class="chat-suggestions" id="chat-suggestions"></div>
+</div>
+
 <script src="/static/app.js"></script>
+<script src="/static/chat.js"></script>
 </body>
 </html>
