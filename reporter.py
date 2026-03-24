@@ -1,7 +1,15 @@
 """reporter.py — Cortiq Decision Copilot v2
-Generates structured investment reports via Claude (async streaming).
+Generates structured investment reports via Claude (primary) or Ollama (fallback/local).
+
+Env vars:
+  ANTHROPIC_API_KEY  — Claude API key
+  ANTHROPIC_MODEL    — Claude model (default: claude-haiku-4-5-20251001)
+  OLLAMA_URL         — Ollama base URL (default: http://localhost:11434)
+  OLLAMA_MODEL       — Ollama model (default: qwen2.5:7b)
+  USE_OLLAMA         — "always" | "fallback" (default: "fallback")
 """
 import os
+import json
 from typing import AsyncGenerator, List, Dict, Optional
 from anthropic import AsyncAnthropic
 
@@ -167,6 +175,67 @@ def _get_model() -> str:
     return os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
 
 
+def _ollama_url() -> str:
+    return os.environ.get("OLLAMA_URL", "http://localhost:11434").rstrip("/")
+
+
+def _ollama_model() -> str:
+    return os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
+
+
+def _use_ollama_mode() -> str:
+    """Returns: 'always' | 'fallback' | 'never'"""
+    return os.environ.get("USE_OLLAMA", "fallback").lower()
+
+
+def _is_claude_quota_error(e: Exception) -> bool:
+    msg = str(e).lower()
+    return any(k in msg for k in [
+        "credit", "quota", "billing", "overloaded",
+        "rate_limit", "authentication", "api_key", "401", "529"
+    ])
+
+
+async def _stream_ollama(prompt: str) -> AsyncGenerator[str, None]:
+    """Stream text from Ollama using /api/generate."""
+    import httpx
+    url = f"{_ollama_url()}/api/generate"
+    payload = {"model": _ollama_model(), "prompt": prompt, "stream": True}
+
+    try:
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            async with client.stream("POST", url, json=payload) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line:
+                        continue
+                    try:
+                        data = json.loads(line)
+                        token = data.get("response", "")
+                        if token:
+                            yield token
+                        if data.get("done"):
+                            break
+                    except json.JSONDecodeError:
+                        continue
+    except Exception as e:
+        yield f"\n\n## Erro Ollama\n{e}"
+
+
+async def _generate_ollama(prompt: str) -> str:
+    """Non-streaming generation from Ollama."""
+    import httpx
+    url = f"{_ollama_url()}/api/generate"
+    payload = {"model": _ollama_model(), "prompt": prompt, "stream": False}
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            r = await client.post(url, json=payload)
+            r.raise_for_status()
+            return r.json().get("response", "").strip()
+    except Exception as e:
+        return f"Erro Ollama: {e}"
+
+
 def _load_critic_rules() -> dict:
     import json
     base = os.getenv("CORTIQ_CONFIG_DIR", os.path.join(os.path.dirname(__file__), "config"))
@@ -217,6 +286,15 @@ async def stream_equity_report(
         market_data_section=market_data_section,
     )
 
+    mode = _use_ollama_mode()
+
+    # Always Ollama
+    if mode == "always":
+        async for token in _stream_ollama(prompt):
+            yield token
+        return
+
+    # Try Claude, fall back to Ollama on quota/auth errors
     try:
         async with client.messages.stream(
             model=_get_model(),
@@ -227,7 +305,12 @@ async def stream_equity_report(
             async for text in stream.text_stream:
                 yield text
     except Exception as e:
-        yield f"\n\n## Erro na Análise\n{e}"
+        if mode == "fallback" and _is_claude_quota_error(e):
+            yield "\n> ⚡ Claude indisponível — usando Ollama local\n\n"
+            async for token in _stream_ollama(prompt):
+                yield token
+        else:
+            yield f"\n\n## Erro na Análise\n{e}"
 
 
 async def stream_startup_report(
@@ -259,6 +342,15 @@ async def stream_startup_report(
         what_changed_section=what_changed_section,
     )
 
+    mode = _use_ollama_mode()
+
+    # Always Ollama
+    if mode == "always":
+        async for token in _stream_ollama(prompt):
+            yield token
+        return
+
+    # Try Claude, fall back to Ollama on quota/auth errors
     try:
         async with client.messages.stream(
             model=_get_model(),
@@ -269,7 +361,12 @@ async def stream_startup_report(
             async for text in stream.text_stream:
                 yield text
     except Exception as e:
-        yield f"\n\n## Erro na Análise\n{e}"
+        if mode == "fallback" and _is_claude_quota_error(e):
+            yield "\n> ⚡ Claude indisponível — usando Ollama local\n\n"
+            async for token in _stream_ollama(prompt):
+                yield token
+        else:
+            yield f"\n\n## Erro na Análise\n{e}"
 
 
 async def generate_critic_notes(
@@ -312,6 +409,9 @@ Evidências:
 {evidence}
 """.strip()
 
+    mode = _use_ollama_mode()
+    if mode == "always":
+        return await _generate_ollama(prompt)
     try:
         msg = await client.messages.create(
             model=_get_model(),
@@ -321,6 +421,8 @@ Evidências:
         )
         return msg.content[0].text.strip()
     except Exception as e:
+        if mode == "fallback" and _is_claude_quota_error(e):
+            return await _generate_ollama(prompt)
         return f"Erro critic: {e}"
 
 
@@ -358,6 +460,9 @@ async def generate_brief_entry(
         research=_format_research(results[:8]),
     )
 
+    mode = _use_ollama_mode()
+    if mode == "always":
+        return await _generate_ollama(prompt)
     try:
         msg = await client.messages.create(
             model=_get_model(),
@@ -367,4 +472,6 @@ async def generate_brief_entry(
         )
         return msg.content[0].text.strip()
     except Exception as e:
+        if mode == "fallback" and _is_claude_quota_error(e):
+            return await _generate_ollama(prompt)
         return f"**ERRO** | {e}"
