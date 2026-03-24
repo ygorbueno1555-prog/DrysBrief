@@ -3,12 +3,13 @@
    Claude-powered · Gap detection · Evidence trail · Comparison
    ============================================================ */
 
-let currentMode  = 'equity';
-let currentES    = null;
-let reportBuffer = '';
-let renderFrame  = null;
-let startTime    = null;
-let sourcesMap   = [];  // [{title, url, source_type}] indexed from 1
+let currentMode      = 'equity';
+let currentES        = null;
+let reportBuffer     = '';
+let renderFrame      = null;
+let startTime        = null;
+let sourcesMap       = [];  // [{title, url, source_type}] indexed from 1
+let currentEvaluation = null;  // evaluation metrics from last SSE stream
 
 // ── DOM ──────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -101,9 +102,10 @@ function startAnalysis(url, label) {
   if (currentES) { currentES.close(); currentES = null; }
 
   resetOutput();
-  reportBuffer = '';
-  sourcesMap   = [];
-  startTime    = Date.now();
+  reportBuffer      = '';
+  sourcesMap        = [];
+  currentEvaluation = null;
+  startTime         = Date.now();
 
   statusPanel.classList.add('visible');
   setStatus('Preparando pesquisa...', 'pulse');
@@ -146,6 +148,10 @@ function startAnalysis(url, label) {
 
   currentES.addEventListener('sources', e => {
     try { sourcesMap = JSON.parse(e.data); } catch {}
+  });
+
+  currentES.addEventListener('evaluation', e => {
+    try { currentEvaluation = JSON.parse(e.data); } catch {}
   });
 
   currentES.addEventListener('market_data', e => {
@@ -588,12 +594,9 @@ function historyLoad() {
 }
 
 function historySave(entry) {
-  // Update in-memory cache synchronously
-  historyCache = historyCache.filter(
-    e => !(e.key === entry.key && e.mode === entry.mode)
-  );
+  // Append to cache — do NOT deduplicate (full timeline preserved)
   historyCache.unshift(entry);
-  if (historyCache.length > 50) historyCache = historyCache.slice(0, 50);
+  if (historyCache.length > 2000) historyCache = historyCache.slice(0, 2000);
   renderHistoryPanel();
   if (currentMode === 'history') renderHistoryView();
 
@@ -627,13 +630,23 @@ function renderHistoryPanel() {
   if (!list.length) { panel.classList.remove('visible'); return; }
   panel.classList.add('visible');
 
-  listEl.innerHTML = list.map(e => `
+  // Show only most recent entry per (mode, key) in sidebar
+  const seen = new Set();
+  const unique = list.filter(e => {
+    const k = `${e.mode}:${(e.key||'').toLowerCase()}`;
+    if (seen.has(k)) return false;
+    seen.add(k); return true;
+  });
+
+  listEl.innerHTML = unique.map(e => {
+    const count = list.filter(x => x.mode === e.mode && (x.key||'').toLowerCase() === (e.key||'').toLowerCase()).length;
+    return `
     <div class="history-item" onclick="historyOpen('${escAttr(e.key)}','${e.mode}')">
       <div class="history-item-badge ${e.verdictColor}">${escHtml(e.verdict)}</div>
       <div class="history-item-name">${escHtml(e.key)}</div>
-      <div class="history-item-date">${historyFormatDate(e.date)}</div>
-    </div>
-  `).join('');
+      <div class="history-item-date">${historyFormatDate(e.date)}${count > 1 ? ` <span style="color:var(--accent);font-size:.65rem">${count}×</span>` : ''}</div>
+    </div>`;
+  }).join('');
 }
 
 // ── History full view (tab mode) ─────────────────────────
@@ -664,7 +677,7 @@ function historyExtractSummary(report) {
   return result.join(' ').slice(0, 200);
 }
 
-function renderHistoryView(selectedKey, selectedMode) {
+function renderHistoryView(selectedKey, selectedMode, selectedDate) {
   const list = historyCache;
 
   if (!list.length) {
@@ -677,41 +690,103 @@ function renderHistoryView(selectedKey, selectedMode) {
     return;
   }
 
-  const cards = list.map(e => {
-    const summary   = historyExtractSummary(e.report);
-    const dateStr   = new Date(e.date).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric' });
-    const modeLabel = e.mode === 'equity' ? '⬡ EQUITY' : '◈ STARTUP';
-    const modeClass = e.mode === 'equity' ? 'equity' : 'startup';
-    const isActive  = e.key === selectedKey && e.mode === selectedMode;
+  // Group by (mode, key) — preserving order of first occurrence (newest first)
+  const groupMap = new Map();
+  list.forEach(e => {
+    const gk = `${e.mode}:${(e.key||'').toLowerCase()}`;
+    if (!groupMap.has(gk)) groupMap.set(gk, { mode: e.mode, key: e.key, entries: [] });
+    groupMap.get(gk).entries.push(e);
+  });
+  const groups = Array.from(groupMap.values());
+
+  const groupsHtml = groups.map(g => {
+    const latest  = g.entries[0];
+    const count   = g.entries.length;
+    const modeLabel = g.mode === 'equity' ? '⬡ EQUITY' : '◈ STARTUP';
+    const modeClass = g.mode === 'equity' ? 'equity' : 'startup';
+    const isActiveGroup = g.key === selectedKey && g.mode === selectedMode;
+
+    // Timeline rows
+    const timelineRows = g.entries.map((e, idx) => {
+      const isLatest = idx === 0;
+      const prev = g.entries[idx + 1];
+      const dateStr = new Date(e.date).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric' });
+      const timeStr = new Date(e.date).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
+      const isActiveEntry = isActiveGroup && e.date === selectedDate;
+
+      // Inline delta badge vs previous entry
+      let deltaBadge = '';
+      if (isLatest && prev) {
+        const verdictChanged = e.verdict !== prev.verdict;
+        const daysBetween = Math.abs(Math.round((new Date(e.date) - new Date(prev.date)) / 86400000));
+        if (verdictChanged) {
+          deltaBadge = `<span class="hist-delta-badge changed">veredito mudou: ${escHtml(prev.verdict)} → ${escHtml(e.verdict)}</span>`;
+        } else {
+          deltaBadge = `<span class="hist-delta-badge same">mantido (${daysBetween}d)</span>`;
+        }
+      }
+
+      return `
+        <div class="hist-timeline-row${isActiveEntry ? ' active' : ''}"
+             data-key="${escAttr(g.key)}" data-mode="${escAttr(g.mode)}" data-date="${escAttr(e.date)}">
+          <div class="hist-tl-dot ${e.verdictColor || 'neutral'}"></div>
+          <div class="hist-tl-date">${dateStr} <span class="hist-tl-time">${timeStr}</span></div>
+          <span class="verdict-tag ${escHtml(e.verdictColor||'')} hist-verdict-sm">${escHtml(e.verdict)}</span>
+          ${e.confidence ? `<span class="hist-tl-conf">${escHtml(e.confidence)}</span>` : ''}
+          ${deltaBadge}
+          <button class="hist-card-open hist-tl-open">Ver →</button>
+        </div>`;
+    }).join('');
 
     return `
-      <div class="hist-card${isActive ? ' active' : ''}" data-key="${escAttr(e.key)}" data-mode="${escAttr(e.mode)}">
-        <div class="hist-card-top">
+      <div class="hist-group${isActiveGroup ? ' active' : ''}" data-key="${escAttr(g.key)}" data-mode="${escAttr(g.mode)}">
+        <div class="hist-group-header">
           <span class="hist-mode-badge ${modeClass}">${modeLabel}</span>
-          <span class="hist-card-key">${escHtml(e.key)}</span>
-          <span class="verdict-tag ${escHtml(e.verdictColor)} hist-verdict">${escHtml(e.verdict)}</span>
-          <span class="hist-card-date">${dateStr}</span>
-          <button class="hist-card-open">Ver →</button>
+          <span class="hist-group-key">${escHtml(g.key)}</span>
+          <span class="verdict-tag ${escHtml(latest.verdictColor||'')} hist-verdict">${escHtml(latest.verdict)}</span>
+          ${count > 1 ? `<span class="hist-group-count">${count} análises</span>` : ''}
+          <span class="hist-group-date">${new Date(latest.date).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric' })}</span>
+          <button class="hist-delete-key" title="Remover histórico de ${escAttr(g.key)}"
+                  data-key="${escAttr(g.key)}" data-mode="${escAttr(g.mode)}">✕</button>
         </div>
-        <div class="hist-card-summary">${summary ? escHtml(summary) + (summary.length >= 199 ? '…' : '') : ''}</div>
+        <div class="hist-timeline">${timelineRows}</div>
       </div>`;
   }).join('');
+
+  const totalEntries = list.length;
+  const totalKeys = groups.length;
 
   historyView.innerHTML = `
     <div class="hist-layout" id="hist-layout">
       <div class="hist-list-col" id="hist-list-col">
         <div class="hist-view-header">
-          <div class="hist-view-title">ANÁLISES <span class="hist-view-count">${list.length}</span></div>
-          <button class="hist-view-clear" id="btn-clear-all">LIMPAR</button>
+          <div class="hist-view-title">HISTÓRICO <span class="hist-view-count">${totalKeys} ativos · ${totalEntries} análises</span></div>
+          <button class="hist-view-clear" id="btn-clear-all">LIMPAR TUDO</button>
         </div>
-        <div class="hist-cards" id="hist-cards">${cards}</div>
+        <div class="hist-cards" id="hist-cards">${groupsHtml}</div>
       </div>
       <div class="hist-detail-col" id="hist-detail-col"></div>
     </div>`;
 
-  // Card click → show detail panel (no tab switch, no new analysis)
-  historyView.querySelectorAll('.hist-card').forEach(card => {
-    card.addEventListener('click', () => openHistoryDetail(card.dataset.key, card.dataset.mode));
+  // Timeline row click → open detail
+  historyView.querySelectorAll('.hist-timeline-row').forEach(row => {
+    row.addEventListener('click', (ev) => {
+      if (ev.target.classList.contains('hist-delete-key')) return;
+      openHistoryDetail(row.dataset.key, row.dataset.mode, row.dataset.date);
+    });
+  });
+
+  // Per-key delete button
+  historyView.querySelectorAll('.hist-delete-key').forEach(btn => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const { key, mode } = btn.dataset;
+      if (!confirm(`Remover todo o histórico de ${key}?`)) return;
+      historyCache = historyCache.filter(e => !(e.mode === mode && (e.key||'').toLowerCase() === key.toLowerCase()));
+      renderHistoryPanel();
+      renderHistoryView();
+      fetch(`/history/${mode}/${encodeURIComponent(key)}`, { method: 'DELETE' }).catch(() => {});
+    });
   });
 
   $('btn-clear-all').addEventListener('click', () => {
@@ -725,20 +800,28 @@ function renderHistoryView(selectedKey, selectedMode) {
   });
 
   // Re-open selected item if any
-  if (selectedKey) openHistoryDetail(selectedKey, selectedMode);
+  if (selectedKey) openHistoryDetail(selectedKey, selectedMode, selectedDate);
 }
 
-function openHistoryDetail(key, mode) {
-  const entry = historyFind(mode, key);
+function openHistoryDetail(key, mode, date) {
+  // Find specific entry by date, or fall back to most recent
+  const allForKey = historyCache.filter(e => e.mode === mode && (e.key||'').toLowerCase() === key.toLowerCase());
+  const entry = date ? allForKey.find(e => e.date === date) : allForKey[0];
   if (!entry) return;
+
+  const entryIdx = allForKey.indexOf(entry);
+  const prevEntry = allForKey[entryIdx + 1] || null;  // older entry
 
   const layout = $('hist-layout');
   const detail = $('hist-detail-col');
   if (!layout || !detail) return;
 
-  // Highlight active card
-  historyView.querySelectorAll('.hist-card').forEach(c => {
-    c.classList.toggle('active', c.dataset.key === key && c.dataset.mode === mode);
+  // Highlight active timeline row
+  historyView.querySelectorAll('.hist-timeline-row').forEach(c => {
+    c.classList.toggle('active', c.dataset.key === key && c.dataset.mode === mode && c.dataset.date === entry.date);
+  });
+  historyView.querySelectorAll('.hist-group').forEach(g => {
+    g.classList.toggle('active', g.dataset.key === key && g.dataset.mode === mode);
   });
 
   layout.classList.add('has-detail');
@@ -748,6 +831,55 @@ function openHistoryDetail(key, mode) {
   });
   const modeLabel = entry.mode === 'equity' ? '⬡ Equity' : '◈ Startup';
 
+  // Delta box HTML (compare this entry vs previous for same key)
+  let deltaHtml = '';
+  if (prevEntry) {
+    const verdictChanged = entry.verdict !== prevEntry.verdict;
+    const confChanged    = entry.confidence !== prevEntry.confidence;
+    const daysBetween    = Math.abs(Math.round((new Date(entry.date) - new Date(prevEntry.date)) / 86400000));
+    const prevDateStr    = new Date(prevEntry.date).toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric' });
+
+    // Evaluation delta
+    const evalNew = entry.evaluation || {};
+    const evalOld = prevEntry.evaluation || {};
+    const covDelta = (evalNew.coverage_score != null && evalOld.coverage_score != null)
+      ? ((evalNew.coverage_score - evalOld.coverage_score) * 100).toFixed(0)
+      : null;
+    const evDelta  = (evalNew.evidence_score != null && evalOld.evidence_score != null)
+      ? ((evalNew.evidence_score - evalOld.evidence_score) * 100).toFixed(0)
+      : null;
+
+    // Sources delta
+    const srcsNew = new Set((entry.sources||[]).map(s=>s.url).filter(Boolean));
+    const srcsOld = new Set((prevEntry.sources||[]).map(s=>s.url).filter(Boolean));
+    const newSrcsCount = [...srcsNew].filter(u => !srcsOld.has(u)).length;
+    const remSrcsCount = [...srcsOld].filter(u => !srcsNew.has(u)).length;
+
+    const deltaItems = [];
+    if (verdictChanged) deltaItems.push(`<span class="hist-delta-item changed">Veredito: <strong>${escHtml(prevEntry.verdict)}</strong> → <strong>${escHtml(entry.verdict)}</strong></span>`);
+    if (confChanged)    deltaItems.push(`<span class="hist-delta-item">Confiança: ${escHtml(prevEntry.confidence||'?')} → ${escHtml(entry.confidence||'?')}</span>`);
+    if (covDelta !== null) {
+      const cls = Number(covDelta) > 0 ? 'pos' : Number(covDelta) < 0 ? 'neg' : '';
+      deltaItems.push(`<span class="hist-delta-item ${cls}">Cobertura: ${Number(covDelta) > 0 ? '+' : ''}${covDelta}pp</span>`);
+    }
+    if (evDelta !== null) {
+      const cls = Number(evDelta) > 0 ? 'pos' : Number(evDelta) < 0 ? 'neg' : '';
+      deltaItems.push(`<span class="hist-delta-item ${cls}">Evidência: ${Number(evDelta) > 0 ? '+' : ''}${evDelta}pp</span>`);
+    }
+    if (newSrcsCount > 0) deltaItems.push(`<span class="hist-delta-item pos">+${newSrcsCount} nova${newSrcsCount>1?'s':''} fonte${newSrcsCount>1?'s':''}</span>`);
+    if (remSrcsCount > 0) deltaItems.push(`<span class="hist-delta-item neg">-${remSrcsCount} fonte${remSrcsCount>1?'s':''} removida${remSrcsCount>1?'s':''}</span>`);
+
+    deltaHtml = `
+      <div class="hist-delta-box">
+        <div class="hist-delta-header">
+          <span class="hist-delta-label">Δ vs ${prevDateStr}</span>
+          <span class="hist-delta-days">${daysBetween} dia${daysBetween !== 1 ? 's' : ''} entre análises</span>
+          <button class="hist-delta-view-prev" id="hist-delta-prev-btn" title="Ver análise anterior">Ver anterior →</button>
+        </div>
+        <div class="hist-delta-items">${deltaItems.length ? deltaItems.join('') : '<span class="hist-delta-item">Sem mudanças estruturais detectadas</span>'}</div>
+      </div>`;
+  }
+
   detail.innerHTML = `
     <div class="hist-detail-header">
       <span class="hist-detail-mode">${modeLabel}</span>
@@ -755,26 +887,34 @@ function openHistoryDetail(key, mode) {
       <span class="verdict-tag ${escHtml(entry.verdictColor)}">${escHtml(entry.verdict)}</span>
       ${entry.confidence ? `<span class="hist-detail-meta">Confiança: <strong>${escHtml(entry.confidence)}</strong></span>` : ''}
       <span class="hist-detail-date">${dateStr}</span>
+      ${allForKey.length > 1 ? `<span class="hist-detail-meta" style="color:var(--accent)">${allForKey.length} análises salvas</span>` : ''}
       <button class="hist-detail-rerun" id="hist-detail-rerun">↺ Reanalisar</button>
       <button class="hist-detail-close" id="hist-detail-close">×</button>
     </div>
+    ${deltaHtml}
     <div class="hist-detail-body">
       <div class="report-content" id="hist-report-content"></div>
     </div>`;
 
-  // Render cached report into the detail panel — zero API calls
+  // Render cached report — zero API calls
   renderBlocks(entry.report, true, $('hist-report-content'), entry.sources || []);
+
+  // View previous entry
+  if (prevEntry) {
+    $('hist-delta-prev-btn')?.addEventListener('click', () => {
+      openHistoryDetail(key, mode, prevEntry.date);
+    });
+  }
 
   // Close
   $('hist-detail-close').addEventListener('click', () => {
     layout.classList.remove('has-detail');
     detail.innerHTML = '';
-    historyView.querySelectorAll('.hist-card').forEach(c => c.classList.remove('active'));
+    historyView.querySelectorAll('.hist-timeline-row, .hist-group').forEach(c => c.classList.remove('active'));
   });
 
-  // Reanalisar — pré-preenche o form e troca de aba, SEM auto-disparar análise
+  // Reanalisar
   $('hist-detail-rerun').addEventListener('click', () => {
-    // Preenche form ANTES de trocar de aba
     if (mode === 'equity') {
       $('ticker').value  = entry.key;
       $('thesis').value  = entry.thesis || '';
@@ -784,7 +924,6 @@ function openHistoryDetail(key, mode) {
       $('startup-url').value    = entry.url || '';
       $('startup-thesis').value = entry.thesis || '';
     }
-    // Troca para a aba correta — usuário decide quando clicar em ANALISAR
     document.querySelector(`.mode-tab[data-mode="${mode}"]`)?.click();
   });
 }
@@ -851,6 +990,7 @@ function historySaveCompleted(mode, key, report, verdict, verdictColor, confiden
   historySave({
     mode, key, report, verdict, verdictColor, confidence,
     sources: sourcesMap,
+    evaluation: currentEvaluation,
     date: new Date().toISOString(),
     ...extras,
   });

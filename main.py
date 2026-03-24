@@ -253,16 +253,91 @@ def get_history():
 
 @app.post("/history")
 async def post_history(entry: dict):
-    mode = entry.get("mode", "")
-    key = (entry.get("key") or "").lower()
+    """Append new analysis entry — never deduplicates so full timeline is preserved."""
     entries = _load_history()
-    entries = [
-        e for e in entries
-        if not (e.get("mode") == mode and (e.get("key") or "").lower() == key)
-    ]
     entries.insert(0, entry)
-    _save_history(entries[:50])
+    _save_history(entries[:2000])   # keep up to 2000 entries total
     return {"ok": True}
+
+
+@app.get("/history/{mode}/{key}")
+def get_history_for_key(mode: str, key: str):
+    """Return all analysis entries for one ticker/company, newest first."""
+    entries = _load_history()
+    return [
+        e for e in entries
+        if e.get("mode") == mode and (e.get("key") or "").lower() == key.lower()
+    ]
+
+
+@app.get("/api/delta/{mode}/{key}")
+def get_history_delta(mode: str, key: str):
+    """Compute structured delta between the last 2 analysis entries for a ticker."""
+    from datetime import datetime
+    entries = _load_history()
+    matches = [
+        e for e in entries
+        if e.get("mode") == mode and (e.get("key") or "").lower() == key.lower()
+    ]
+    if len(matches) < 2:
+        return {"has_delta": False, "entry_count": len(matches)}
+
+    new_e = matches[0]
+    old_e = matches[1]
+
+    def _num_delta(field, new_d, old_d):
+        n = new_d.get(field)
+        o = old_d.get(field)
+        if n is None or o is None:
+            return {"new": n, "old": o, "delta": None}
+        return {"new": round(float(n), 3), "old": round(float(o), 3), "delta": round(float(n) - float(o), 3)}
+
+    eval_new = new_e.get("evaluation") or {}
+    eval_old = old_e.get("evaluation") or {}
+
+    srcs_new = {s.get("url") for s in (new_e.get("sources") or []) if s.get("url")}
+    srcs_old = {s.get("url") for s in (old_e.get("sources") or []) if s.get("url")}
+
+    days_between = None
+    try:
+        d_new = datetime.fromisoformat(new_e["date"].replace("Z", "+00:00"))
+        d_old = datetime.fromisoformat(old_e["date"].replace("Z", "+00:00"))
+        days_between = abs((d_new - d_old).days)
+    except Exception:
+        pass
+
+    return {
+        "has_delta": True,
+        "entry_count": len(matches),
+        "days_between": days_between,
+        "new_date": new_e.get("date"),
+        "old_date": old_e.get("date"),
+        "verdict": {
+            "from": old_e.get("verdict", ""),
+            "to": new_e.get("verdict", ""),
+            "changed": old_e.get("verdict") != new_e.get("verdict"),
+            "from_color": old_e.get("verdictColor", ""),
+            "to_color": new_e.get("verdictColor", ""),
+        },
+        "confidence": {
+            "from": old_e.get("confidence", ""),
+            "to": new_e.get("confidence", ""),
+            "changed": old_e.get("confidence") != new_e.get("confidence"),
+        },
+        "evaluation": {
+            "coverage_score": _num_delta("coverage_score", eval_new, eval_old),
+            "evidence_score": _num_delta("evidence_score", eval_new, eval_old),
+            "primary_source_ratio": _num_delta("primary_source_ratio", eval_new, eval_old),
+            "source_count": _num_delta("source_count", eval_new, eval_old),
+        },
+        "sources": {
+            "new_count": len(srcs_new - srcs_old),
+            "removed_count": len(srcs_old - srcs_new),
+            "common_count": len(srcs_new & srcs_old),
+            "new_sources": [s for s in (new_e.get("sources") or []) if s.get("url") in (srcs_new - srcs_old)][:5],
+            "removed_sources": [s for s in (old_e.get("sources") or []) if s.get("url") in (srcs_old - srcs_new)][:5],
+        },
+    }
 
 
 @app.delete("/history")
@@ -273,6 +348,7 @@ def clear_history():
 
 @app.delete("/history/{mode}/{key}")
 def delete_history_entry(mode: str, key: str):
+    """Delete ALL entries for a given ticker/company."""
     entries = _load_history()
     entries = [
         e for e in entries
