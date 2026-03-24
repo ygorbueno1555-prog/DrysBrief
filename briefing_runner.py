@@ -337,6 +337,12 @@ async def run_watchlist_briefing(portfolio_id: str | None = None) -> list[dict]:
 
 
 def load_drafts() -> list:
+    try:
+        import db as _db
+        return _db.drafts_load_all()
+    except Exception:
+        pass
+    # fallback: filesystem
     os.makedirs(DRAFTS_DIR, exist_ok=True)
     drafts = []
     for fname in sorted(os.listdir(DRAFTS_DIR), reverse=True):
@@ -350,6 +356,13 @@ def load_drafts() -> list:
 
 
 def load_draft(draft_id: str) -> dict | None:
+    try:
+        import db as _db
+        result = _db.draft_load(draft_id)
+        if result:
+            return result
+    except Exception:
+        pass
     path = os.path.join(DRAFTS_DIR, f"{draft_id}.json")
     if not os.path.exists(path):
         return None
@@ -358,6 +371,12 @@ def load_draft(draft_id: str) -> dict | None:
 
 
 def save_draft(draft: dict) -> None:
+    try:
+        import db as _db
+        _db.draft_save(draft)
+        return
+    except Exception:
+        pass
     os.makedirs(DRAFTS_DIR, exist_ok=True)
     path = os.path.join(DRAFTS_DIR, f"{draft['id']}.json")
     with open(path, "w", encoding="utf-8") as f:

@@ -141,7 +141,14 @@ async def _gap_check(topic: str, mode: str, results: List[Dict]) -> List[str]:
 
 
 def _save_artifact(data: dict) -> str:
-    """Save analysis artifact to persistent storage."""
+    """Save analysis artifact to Postgres (with file fallback)."""
+    try:
+        import db as _db
+        mode = data.get("mode", "")
+        key  = data.get("key") or data.get("ticker") or ""
+        _db.artifact_save(mode, key, data)
+    except Exception as e:
+        print(f"[agent] artifact db save error: {e}")
     try:
         _persist = os.environ.get("PERSISTENT_DATA_DIR", os.path.join(os.path.dirname(__file__), "data"))
         artifacts_dir = os.path.join(_persist, "artifacts")

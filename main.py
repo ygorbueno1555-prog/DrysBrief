@@ -19,9 +19,10 @@ load_dotenv()
 
 from agent import run_equity_analysis, run_startup_analysis
 from briefing_runner import (
-    run_watchlist_briefing, load_drafts, load_draft, save_draft, send_brief_email
+    run_watchlist_briefing, send_brief_email
 )
-from chat import load_latest_artifact, stream_chat, generate_devil, generate_conviction_breakdown
+from chat import stream_chat, generate_devil, generate_conviction_breakdown
+import db
 
 # ── Scheduler ────────────────────────────────────────────
 def _setup_scheduler(app):
@@ -97,20 +98,13 @@ MUTATION_LABELS = {
 }
 
 def _load_portfolio() -> dict:
-    if not os.path.exists(PORTFOLIO_PATH):
-        return {"companies": []}
-    with open(PORTFOLIO_PATH, encoding="utf-8") as f:
-        return json.load(f)
+    return db.kv_get("portfolio", {"companies": []})
 
 def _save_portfolio(data: dict):
-    with open(PORTFOLIO_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    db.kv_set("portfolio", data)
 
 def _load_portfolio_history() -> list:
-    if not os.path.exists(PORTFOLIO_HISTORY_PATH):
-        return []
-    with open(PORTFOLIO_HISTORY_PATH, encoding="utf-8") as f:
-        return json.load(f)
+    return db.kv_get("portfolio_history", [])
 
 def _save_portfolio_history_entry(entry: dict):
     from datetime import datetime, timezone
@@ -118,29 +112,21 @@ def _save_portfolio_history_entry(entry: dict):
     history = [h for h in history if not (h.get("name") == entry["name"] and h.get("type") == entry["type"])]
     entry["date"] = datetime.now(timezone.utc).isoformat()
     history.insert(0, entry)
-    history = history[:MAX_PORTFOLIO_HISTORY]
-    with open(PORTFOLIO_HISTORY_PATH, "w", encoding="utf-8") as f:
-        json.dump(history, f, ensure_ascii=False, indent=2)
+    db.kv_set("portfolio_history", history[:MAX_PORTFOLIO_HISTORY])
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
-# ── History helpers ───────────────────────────────────────
+# ── History helpers — backed by Postgres ──────────────────
 
 def _load_history() -> List:
-    if not os.path.exists(HISTORY_FILE):
-        return []
-    try:
-        with open(HISTORY_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return []
-
+    return db.history_load()
 
 def _save_history(entries: list) -> None:
-    os.makedirs(DATA_DIR, exist_ok=True)
-    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(entries, f, ensure_ascii=False, indent=2)
+    pass  # history is written per-entry via history_save(); bulk replace not used
+
+def _history_save_entry(entry: dict) -> None:
+    db.history_save(entry)
 
 
 # ── Pages ─────────────────────────────────────────────────
@@ -260,21 +246,15 @@ def get_history():
 
 @app.post("/history")
 async def post_history(entry: dict):
-    """Append new analysis entry — never deduplicates so full timeline is preserved."""
-    entries = _load_history()
-    entries.insert(0, entry)
-    _save_history(entries[:2000])   # keep up to 2000 entries total
+    """Persist analysis entry to Postgres."""
+    _history_save_entry(entry)
     return {"ok": True}
 
 
 @app.get("/history/{mode}/{key}")
 def get_history_for_key(mode: str, key: str):
     """Return all analysis entries for one ticker/company, newest first."""
-    entries = _load_history()
-    return [
-        e for e in entries
-        if e.get("mode") == mode and (e.get("key") or "").lower() == key.lower()
-    ]
+    return db.history_for_key(mode, key)
 
 
 @app.get("/api/delta/{mode}/{key}")
@@ -349,19 +329,13 @@ def get_history_delta(mode: str, key: str):
 
 @app.delete("/history")
 def clear_history():
-    _save_history([])
+    db.history_clear()
     return {"ok": True}
 
 
 @app.delete("/history/{mode}/{key}")
 def delete_history_entry(mode: str, key: str):
-    """Delete ALL entries for a given ticker/company."""
-    entries = _load_history()
-    entries = [
-        e for e in entries
-        if not (e.get("mode") == mode and (e.get("key") or "").lower() == key.lower())
-    ]
-    _save_history(entries)
+    db.history_delete_key(mode, key)
     return {"ok": True}
 
 
@@ -415,7 +389,7 @@ class DraftUpdate(BaseModel):
 
 @app.get("/api/drafts")
 def list_drafts():
-    drafts = load_drafts()
+    drafts = db.drafts_load_all()
     return [{"id": d["id"], "date": d.get("date"), "status": d.get("status"),
              "subject": d.get("subject"), "generated_at": d.get("generated_at"),
              "portfolio_id": d.get("portfolio_id"), "portfolio_name": d.get("portfolio_name"),
@@ -425,7 +399,7 @@ def list_drafts():
 
 @app.get("/api/drafts/{draft_id}")
 def get_draft(draft_id: str):
-    draft = load_draft(draft_id)
+    draft = db.draft_load(draft_id)
     if not draft:
         raise HTTPException(404, "Draft não encontrado")
     return draft
@@ -433,7 +407,7 @@ def get_draft(draft_id: str):
 
 @app.patch("/api/drafts/{draft_id}")
 def update_draft(draft_id: str, body: DraftUpdate):
-    draft = load_draft(draft_id)
+    draft = db.draft_load(draft_id)
     if not draft:
         raise HTTPException(404, "Draft não encontrado")
     if body.subject is not None:
@@ -442,13 +416,13 @@ def update_draft(draft_id: str, body: DraftUpdate):
         draft["content"] = body.content
     if body.recipients is not None:
         draft["recipients"] = body.recipients
-    save_draft(draft)
+    db.draft_save(draft)
     return draft
 
 
 @app.post("/api/drafts/{draft_id}/send")
 def send_draft(draft_id: str):
-    draft = load_draft(draft_id)
+    draft = db.draft_load(draft_id)
     if not draft:
         raise HTTPException(404, "Draft não encontrado")
     if not draft.get("recipients"):
@@ -459,7 +433,7 @@ def send_draft(draft_id: str):
         from datetime import datetime, timezone
         draft["status"] = "sent"
         draft["sent_at"] = datetime.now(timezone.utc).isoformat()
-        save_draft(draft)
+        db.draft_save(draft)
         return {"ok": True, "message": f"Brief enviado para {draft['recipients']}"}
     else:
         raise HTTPException(500, "Falha no envio. Verifique RESEND_API_KEY.")
@@ -467,11 +441,11 @@ def send_draft(draft_id: str):
 
 @app.delete("/api/drafts/{draft_id}")
 def discard_draft(draft_id: str):
-    draft = load_draft(draft_id)
+    draft = db.draft_load(draft_id)
     if not draft:
         raise HTTPException(404, "Draft não encontrado")
     draft["status"] = "discarded"
-    save_draft(draft)
+    db.draft_save(draft)
     return {"ok": True}
 
 
@@ -492,23 +466,21 @@ async def trigger_briefing(portfolio_id: Optional[str] = None):
 
 
 # ── Thesis Chat API ───────────────────────────────────────
-# ARTIFACTS_DIR already set above from PERSISTENT_DATA_DIR
-
 
 class ChatRequest(BaseModel):
-    mode: str          # equity | startup
-    key: str           # ticker or startup name
+    mode: str
+    key: str
     question: str
     history: Optional[List[dict]] = []
 
 
+def _load_artifact(mode: str, key: str):
+    return db.artifact_load_latest(mode, key) or db.artifact_load_latest(mode, key.upper())
+
+
 @app.post("/api/chat")
 async def chat_endpoint(body: ChatRequest):
-    """Stream a thesis debate response grounded in the analysis artifact."""
-    artifact = load_latest_artifact(body.mode, body.key.upper(), ARTIFACTS_DIR)
-    if not artifact:
-        # fallback: try lowercase (startup names)
-        artifact = load_latest_artifact(body.mode, body.key, ARTIFACTS_DIR)
+    artifact = _load_artifact(body.mode, body.key)
     if not artifact:
         raise HTTPException(404, f"Nenhum artifact encontrado para '{body.key}'. Execute a análise primeiro.")
 
@@ -526,13 +498,9 @@ async def chat_endpoint(body: ChatRequest):
 
 @app.get("/api/chat/devil/{mode}/{key}")
 async def devil_advocate(mode: str, key: str):
-    """Return the strongest counter-argument against the current verdict."""
-    artifact = load_latest_artifact(mode, key.upper(), ARTIFACTS_DIR)
-    if not artifact:
-        artifact = load_latest_artifact(mode, key, ARTIFACTS_DIR)
+    artifact = _load_artifact(mode, key)
     if not artifact:
         raise HTTPException(404, f"Nenhum artifact encontrado para '{key}'.")
-
     devil = await generate_devil(artifact)
     return {
         "devil": devil,
@@ -545,13 +513,9 @@ async def devil_advocate(mode: str, key: str):
 
 @app.get("/api/chat/conviction/{mode}/{key}")
 async def conviction_breakdown(mode: str, key: str):
-    """Return conviction score breakdown across 5 investment dimensions."""
-    artifact = load_latest_artifact(mode, key.upper(), ARTIFACTS_DIR)
-    if not artifact:
-        artifact = load_latest_artifact(mode, key, ARTIFACTS_DIR)
+    artifact = _load_artifact(mode, key)
     if not artifact:
         raise HTTPException(404, f"Nenhum artifact encontrado para '{key}'.")
-
     breakdown = await generate_conviction_breakdown(artifact)
     return {
         "breakdown": breakdown,
@@ -564,8 +528,7 @@ async def conviction_breakdown(mode: str, key: str):
 def get_artifact_summary(mode: str, key: str):
     """Return a lightweight summary of the latest artifact (for UI context)."""
     artifact = load_latest_artifact(mode, key.upper(), ARTIFACTS_DIR)
-    if not artifact:
-        artifact = load_latest_artifact(mode, key, ARTIFACTS_DIR)
+    artifact = _load_artifact(mode, key)
     if not artifact:
         raise HTTPException(404, f"Nenhum artifact encontrado para '{key}'.")
 
@@ -584,15 +547,24 @@ def get_artifact_summary(mode: str, key: str):
 
 @app.get("/api/watchlist")
 def get_watchlist():
-    import json
+    stored = db.kv_get("watchlist")
+    if stored:
+        return stored
+    # fallback: read from file on first run
     path = os.path.join(BASE_DIR, "watchlist.json")
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        db.kv_set("watchlist", data)
+        return data
+    return {}
 
 
 @app.put("/api/watchlist")
 async def update_watchlist(request: Request):
     body = await request.json()
+    db.kv_set("watchlist", body)
+    # keep file in sync for local dev / briefing_runner
     path = os.path.join(BASE_DIR, "watchlist.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(body, f, ensure_ascii=False, indent=2)
