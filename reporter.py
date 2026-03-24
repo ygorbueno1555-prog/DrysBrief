@@ -164,7 +164,7 @@ def _get_client() -> AsyncAnthropic:
 
 
 def _get_model() -> str:
-    return os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+    return os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
 
 
 def _load_critic_rules() -> dict:
