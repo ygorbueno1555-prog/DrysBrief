@@ -176,11 +176,11 @@ def _get_model() -> str:
 
 
 def _ollama_url() -> str:
-    return os.environ.get("OLLAMA_URL", "http://localhost:11434").rstrip("/")
+    return os.environ.get("OLLAMA_URL", "http://100.82.138.123:11434").rstrip("/")
 
 
 def _ollama_model() -> str:
-    return os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
+    return os.environ.get("OLLAMA_MODEL", "qwen2.5:14b")
 
 
 def _use_ollama_mode() -> str:
