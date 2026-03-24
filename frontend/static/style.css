@@ -1205,3 +1205,71 @@ a.evidence-title { cursor: pointer; }
 .md-sep    { color: var(--border); }
 .md-pill   { color: var(--text-3); background: rgba(255,255,255,0.04); padding: 1px 6px; border-radius: 3px; border: 1px solid var(--border); font-size: 10px; }
 .md-range  { color: var(--text-3); font-size: 10px; }
+
+/* ── Tooltips globais ────────────────────────────────────── */
+[data-tooltip] {
+  position: relative;
+  cursor: default;
+}
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0d1526;
+  color: #e2e8f0;
+  border: 1px solid #1e2d45;
+  border-radius: 7px;
+  padding: 8px 13px;
+  font-size: 12px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: normal;
+  width: max-content;
+  max-width: 260px;
+  text-align: left;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  transform: translateX(-50%) translateY(4px);
+  z-index: 9999;
+  letter-spacing: 0;
+}
+[data-tooltip]:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+/* Seta do tooltip */
+[data-tooltip]::before {
+  content: '';
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: #1e2d45;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  z-index: 9999;
+}
+[data-tooltip]:hover::before {
+  opacity: 1;
+}
+/* Tooltip alinhado à esquerda (para elementos na borda direita) */
+[data-tooltip-pos="left"]::after {
+  left: auto;
+  right: 0;
+  transform: translateX(0) translateY(4px);
+}
+[data-tooltip-pos="left"]:hover::after {
+  transform: translateX(0) translateY(0);
+}
+[data-tooltip-pos="left"]::before {
+  left: auto;
+  right: 12px;
+  transform: none;
+}

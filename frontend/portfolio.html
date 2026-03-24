@@ -95,9 +95,9 @@
 </div>
 
 <div class="pf-tabs">
-  <button class="pf-tab active" data-tab="portfolio">Meu Portfólio</button>
-  <button class="pf-tab" data-tab="history">Histórico</button>
-  <button class="pf-tab" data-tab="evolution">Evolução do Research</button>
+  <button class="pf-tab active" data-tab="portfolio" data-tooltip="Lista de ativos e startups monitorados — adicione itens e analise tudo de uma vez">Meu Portfólio</button>
+  <button class="pf-tab" data-tab="history" data-tooltip="Todas as análises anteriores salvas — clique para ver análise completa ou reanalisar">Histórico</button>
+  <button class="pf-tab" data-tab="evolution" data-tooltip="Métricas de qualidade do Lab — veja quantos experimentos melhoraram as análises">Evolução do Research</button>
 </div>
 
 <div class="pf-content">
@@ -107,14 +107,14 @@
 
     <div class="add-form">
       <div class="field">
-        <label>Tipo</label>
+        <label data-tooltip="Equity = ações listadas na bolsa (ex: VALE3). Startup = empresa privada que você quer monitorar">Tipo</label>
         <select id="add-type">
           <option value="equity">Equity (ticker)</option>
           <option value="startup">Startup</option>
         </select>
       </div>
       <div class="field">
-        <label>Nome / Ticker</label>
+        <label data-tooltip="Para Equity: código da ação (VALE3, PETR4). Para Startup: nome da empresa">Nome / Ticker</label>
         <input type="text" id="add-name" placeholder="VALE3 ou Stripe" />
       </div>
       <div class="field" id="url-field" style="display:none">
@@ -126,7 +126,7 @@
 
     <div class="companies-list" id="companies-list"></div>
 
-    <button class="btn-analyze" id="btn-analyze" disabled>▶ Analisar Portfólio</button>
+    <button class="btn-analyze" id="btn-analyze" disabled data-tooltip="Roda análise completa para cada item da lista em paralelo — pode levar 1-2 min dependendo do tamanho">▶ Analisar Portfólio</button>
 
     <div class="results-grid" id="results-grid"></div>
 
@@ -200,8 +200,8 @@ function renderList() {
   btn.disabled = false;
   el.innerHTML = portfolio.companies.map(c => `
     <div class="company-item" data-id="${c.id}">
-      <span class="company-badge ${c.type === 'equity' ? 'badge-equity' : 'badge-startup'}">${c.type === 'equity' ? 'EQUITY' : 'STARTUP'}</span>
-      <span class="company-name">${c.name}</span>
+      <span class="company-badge ${c.type === 'equity' ? 'badge-equity' : 'badge-startup'}" data-tooltip="${c.type === 'equity' ? 'Ação listada em bolsa — análise de tese, valuation, riscos e catalisadores' : 'Empresa privada — due diligence com time, mercado, tração e red flags'}">${c.type === 'equity' ? 'EQUITY' : 'STARTUP'}</span>
+      <span class="company-name" data-tooltip="${c.type === 'equity' ? 'Clique em Analisar para gerar relatório completo de ' + c.name : 'Clique em Analisar para gerar VC memo de ' + c.name}">${c.name}</span>
       ${c.url ? `<span class="company-url">${c.url}</span>` : ''}
       <button class="btn-remove" onclick="removeCompany('${c.id}')">✕</button>
     </div>
@@ -293,7 +293,7 @@ document.getElementById('btn-analyze').addEventListener('click', async () => {
             ${verdictRaw ? `<span class="verdict-badge ${verdictClass}">${verdictRaw}</span>` : ''}
           </div>
           <div class="result-brief">${briefHtml}</div>
-          <button class="btn-open" onclick="window.location='${openUrl}'">Ver análise completa →</button>
+          <button class="btn-open" onclick="window.location='${openUrl}'" data-tooltip="Abre a análise completa com veredito, riscos, catalisadores e fontes">Ver análise completa →</button>
         `;
       }
       if (event === 'done') {
