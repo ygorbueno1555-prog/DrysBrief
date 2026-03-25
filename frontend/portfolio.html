@@ -247,63 +247,69 @@ document.getElementById('btn-analyze').addEventListener('click', async () => {
     grid.appendChild(card);
   });
 
-  const res = await fetch('/api/portfolio/analyze', { method: 'POST' });
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = '';
+  try {
+    const res = await fetch('/api/portfolio/analyze', { method: 'POST' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const parts = buf.split('\n\n');
-    buf = parts.pop();
-    for (const part of parts) {
-      const event_m = part.match(/^event: (.+)/m);
-      const data_m = part.match(/^data: (.+)/m);
-      if (!event_m || !data_m) continue;
-      const event = event_m[1].trim();
-      let data = {};
-      try { data = JSON.parse(data_m[1]); } catch {}
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop();
+      for (const part of parts) {
+        const event_m = part.match(/^event: (.+)/m);
+        const data_m = part.match(/^data: (.+)/m);
+        if (!event_m || !data_m) continue;
+        const event = event_m[1].trim();
+        let data = {};
+        try { data = JSON.parse(data_m[1]); } catch {}
 
-      if (event === 'result') {
-        const card = document.getElementById('card-' + data.id);
-        if (!card) continue;
-        card.classList.remove('loading');
+        if (event === 'result') {
+          const card = document.getElementById('card-' + data.id);
+          if (!card) continue;
+          card.classList.remove('loading');
 
-        // parse verdict from brief
-        const verdictMatch = (data.brief || '').match(/\*\*([A-ZÇÃÕÊÉÁÍ\s]+)\*\*/);
-        const verdictRaw = verdictMatch ? verdictMatch[1].trim() : '';
-        const verdictClass = {
-          'TESE MANTIDA': 'verdict-mantida', 'TESE ALTERADA': 'verdict-alterada', 'TESE INVALIDADA': 'verdict-invalidada',
-          'INVESTIR': 'verdict-investir', 'MONITORAR': 'verdict-monitorar', 'PASSAR': 'verdict-passar',
-          'COMPRAR': 'verdict-comprar', 'MANTER': 'verdict-manter', 'REDUZIR': 'verdict-reduzir', 'VENDER': 'verdict-vender',
-        }[verdictRaw] || '';
+          // parse verdict from brief
+          const verdictMatch = (data.brief || '').match(/\*\*([A-ZÇÃÕÊÉÁÍ\s]+)\*\*/);
+          const verdictRaw = verdictMatch ? verdictMatch[1].trim() : '';
+          const verdictClass = {
+            'TESE MANTIDA': 'verdict-mantida', 'TESE ALTERADA': 'verdict-alterada', 'TESE INVALIDADA': 'verdict-invalidada',
+            'INVESTIR': 'verdict-investir', 'MONITORAR': 'verdict-monitorar', 'PASSAR': 'verdict-passar',
+            'COMPRAR': 'verdict-comprar', 'MANTER': 'verdict-manter', 'REDUZIR': 'verdict-reduzir', 'VENDER': 'verdict-vender',
+          }[verdictRaw] || '';
 
-        const briefHtml = data.ok ? marked.parse(data.brief || '') : `<span style="color:#f87171">${data.brief}</span>`;
-        const company = portfolio.companies.find(c => c.id === data.id);
-        const openUrl = company ? (company.type === 'equity'
-          ? `/?ticker=${encodeURIComponent(company.name)}`
-          : `/?startup=${encodeURIComponent(company.name)}&url=${encodeURIComponent(company.url||'')}`)
-          : '/';
+          const briefHtml = data.ok ? marked.parse(data.brief || '') : `<span style="color:#f87171">${data.brief}</span>`;
+          const company = portfolio.companies.find(c => c.id === data.id);
+          const openUrl = company ? (company.type === 'equity'
+            ? `/?ticker=${encodeURIComponent(company.name)}`
+            : `/?startup=${encodeURIComponent(company.name)}&url=${encodeURIComponent(company.url||'')}`)
+            : '/';
 
-        card.innerHTML = `
-          <div class="result-header">
-            <span class="result-name">${data.name}</span>
-            ${verdictRaw ? `<span class="verdict-badge ${verdictClass}">${verdictRaw}</span>` : ''}
-          </div>
-          <div class="result-brief">${briefHtml}</div>
-          <button class="btn-open" onclick="window.location='${openUrl}'" data-tooltip="Abre a análise completa com veredito, riscos, catalisadores e fontes">Ver análise completa →</button>
-        `;
-      }
-      if (event === 'done') {
-        btn.disabled = false;
-        btn.textContent = '▶ Analisar Portfólio';
+          card.innerHTML = `
+            <div class="result-header">
+              <span class="result-name">${data.name}</span>
+              ${verdictRaw ? `<span class="verdict-badge ${verdictClass}">${verdictRaw}</span>` : ''}
+            </div>
+            <div class="result-brief">${briefHtml}</div>
+            <button class="btn-open" onclick="window.location='${openUrl}'" data-tooltip="Abre a análise completa com veredito, riscos, catalisadores e fontes">Ver análise completa →</button>
+          `;
+        }
+        if (event === 'done') {
+          btn.disabled = false;
+          btn.textContent = '▶ Analisar Portfólio';
+        }
       }
     }
+  } catch (err) {
+    grid.innerHTML = `<div style="color:#f87171;padding:1rem">Erro na análise: ${err.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '▶ Analisar Portfólio';
   }
-  btn.disabled = false;
-  btn.textContent = '▶ Analisar Portfólio';
 });
 
 // ── History ──

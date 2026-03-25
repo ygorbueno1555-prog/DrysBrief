@@ -42,7 +42,13 @@ def build_startup_queries(name: str, url: str, thesis: str) -> list[str]:
 async def _search_async(query: str) -> List[Dict]:
     """Run search_topic in a thread pool to avoid blocking the event loop."""
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, search_topic, query)
+    try:
+        return await asyncio.wait_for(
+            loop.run_in_executor(None, search_topic, query),
+            timeout=20.0
+        )
+    except asyncio.TimeoutError:
+        return [{"title": "Timeout na pesquisa", "content": "Tavily não respondeu em 20s", "url": "", "query": query, "source_type": "error"}]
 
 
 async def _run_queries_parallel(queries: List[str]) -> List[Dict]:
