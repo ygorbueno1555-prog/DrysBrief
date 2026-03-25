@@ -573,6 +573,20 @@ async def update_watchlist(request: Request):
 
 # ── Portfolio API ──────────────────────────────────────────
 
+@app.get("/api/db-ping")
+def db_ping():
+    try:
+        import psycopg2
+        url = os.environ.get("DATABASE_URL", "")
+        if not url:
+            return {"ok": False, "error": "DATABASE_URL não configurada"}
+        conn = psycopg2.connect(url, connect_timeout=5)
+        conn.close()
+        return {"ok": True, "url": url[:40] + "..."}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @app.get("/api/portfolio")
 def get_portfolio():
     return _load_portfolio()
