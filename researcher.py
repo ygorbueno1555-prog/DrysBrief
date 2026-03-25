@@ -93,6 +93,7 @@ def search_topic(query: str, max_results: int = 5) -> List[Dict]:
                 "url": r.get("url", ""),
                 "query": query,
                 "source_type": _infer_source_type(r.get("url", "")),
+                "published_date": r.get("published_date", ""),
             }
             for r in response.get("results", [])
         ]

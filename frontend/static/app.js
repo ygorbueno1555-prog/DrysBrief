@@ -9,7 +9,8 @@ let reportBuffer     = '';
 let renderFrame      = null;
 let startTime        = null;
 let sourcesMap       = [];  // [{title, url, source_type}] indexed from 1
-let currentEvaluation = null;  // evaluation metrics from last SSE stream
+let currentEvaluation = null;    // evaluation metrics from last SSE stream
+let currentDateRange  = null;    // source_date_range from last SSE stream
 
 // ── DOM ──────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -105,6 +106,7 @@ function startAnalysis(url, label) {
   reportBuffer      = '';
   sourcesMap        = [];
   currentEvaluation = null;
+  currentDateRange  = null;
   startTime         = Date.now();
 
   statusPanel.classList.add('visible');
@@ -154,6 +156,10 @@ function startAnalysis(url, label) {
 
   currentES.addEventListener('evaluation', e => {
     try { currentEvaluation = JSON.parse(e.data); } catch {}
+  });
+
+  currentES.addEventListener('source_date_range', e => {
+    try { currentDateRange = JSON.parse(e.data); } catch {}
   });
 
   currentES.addEventListener('market_data', e => {
@@ -996,11 +1002,58 @@ function showCachedReport(entry, showHint = false) {
   renderBlocks(entry.report, true);
   if (showHint) showCacheHint(entry);
 
+  // Staleness badge — warn analyst if analysis is old
+  _renderStalenessBadge(entry);
+
   // Show debate button with correct context
   const debateBtn = document.getElementById('btn-debate');
   if (debateBtn && entry.key) {
     debateBtn.style.display = 'inline-flex';
     debateBtn._entry = entry; // store for chat.js to use
+  }
+}
+
+function _renderStalenessBadge(entry) {
+  // Remove any existing badge first
+  const existing = document.getElementById('staleness-badge');
+  if (existing) existing.remove();
+
+  const analysisDate = entry.date ? new Date(entry.date) : null;
+  if (!analysisDate) return;
+
+  const daysSince = Math.floor((Date.now() - analysisDate) / 86400000);
+  if (daysSince < 2) return; // fresh — no badge needed
+
+  const dr = entry.source_date_range || {};
+  let color, icon, msg;
+
+  if (daysSince <= 7) {
+    color = '#fbbf24'; icon = '🕐';
+    msg = `Análise feita há ${daysSince} dias`;
+  } else if (daysSince <= 30) {
+    color = '#f97316'; icon = '⚠️';
+    msg = `Análise com ${daysSince} dias — verifique novidades`;
+  } else {
+    color = '#f87171'; icon = '🔴';
+    msg = `Análise com ${daysSince} dias — recomenda-se reanalisar`;
+  }
+
+  const sourceInfo = dr.newest
+    ? ` · Fontes de ${dr.oldest} a ${dr.newest}`
+    : '';
+
+  const badge = document.createElement('div');
+  badge.id = 'staleness-badge';
+  badge.style.cssText = `
+    display:flex;align-items:center;gap:.5rem;padding:.5rem .85rem;
+    background:#111;border:1px solid ${color}44;border-radius:8px;
+    font-size:.75rem;color:${color};margin-bottom:.75rem;
+  `;
+  badge.innerHTML = `<span>${icon}</span><span>${msg}${sourceInfo}</span>`;
+
+  const reportContent = document.getElementById('report-content');
+  if (reportContent && reportContent.parentNode) {
+    reportContent.parentNode.insertBefore(badge, reportContent);
   }
 }
 
@@ -1030,6 +1083,7 @@ function historySaveCompleted(mode, key, report, verdict, verdictColor, confiden
     mode, key, report, verdict, verdictColor, confidence,
     sources: sourcesMap,
     evaluation: currentEvaluation,
+    source_date_range: currentDateRange,
     date: new Date().toISOString(),
     ...extras,
   });

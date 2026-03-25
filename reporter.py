@@ -255,6 +255,7 @@ async def stream_equity_report(
     prev_date: str = "",
     market_data: Optional[dict] = None,
     evidence_score: float = 1.0,
+    source_date_range: Optional[dict] = None,
 ) -> AsyncGenerator[str, None]:
     try:
         client = _get_client()
@@ -277,6 +278,23 @@ async def stream_equity_report(
         if formatted:
             market_data_section = formatted + "\n\n"
 
+    # Data freshness block — gives Claude and the analyst full transparency
+    freshness_block = ""
+    if source_date_range and source_date_range.get("newest"):
+        dr = source_date_range
+        days = dr.get("days_since_newest", 0)
+        stale_warn = ""
+        if days > 30:
+            stale_warn = f" ⚠️ Fonte mais recente tem {days} dias — dados podem estar desatualizados."
+        elif days > 7:
+            stale_warn = f" Verifique se houve novidades relevantes nos últimos {days} dias."
+        freshness_block = (
+            f"\n📅 JANELA DE DADOS: Fontes datadas de {dr['oldest']} a {dr['newest']} "
+            f"({dr.get('source_count_dated', 0)} fontes com data). "
+            f"Análise recém-gerada.{stale_warn}\n"
+            f"→ Mencione no 'Racional da confiança' se as fontes são recentes ou podem estar desatualizadas.\n"
+        )
+
     # Evidence guardrail — prevents Claude from overriding quality signals
     if evidence_score < 0.45:
         evidence_guardrail = "\n⚠️ QUALIDADE DE EVIDÊNCIA BAIXA (score {:.2f}): use obrigatoriamente Confiança: BAIXA e mencione limitações dos dados.\n".format(evidence_score)
@@ -292,7 +310,7 @@ async def stream_equity_report(
         research=_format_research(results),
         prev_context=prev_context,
         what_changed_section=what_changed_section,
-        market_data_section=market_data_section + evidence_guardrail,
+        market_data_section=market_data_section + freshness_block + evidence_guardrail,
     )
 
     mode = _use_ollama_mode()
@@ -329,6 +347,7 @@ async def stream_startup_report(
     thesis: str,
     prev_verdict: str = "",
     prev_date: str = "",
+    source_date_range: Optional[dict] = None,
 ) -> AsyncGenerator[str, None]:
     try:
         client = _get_client()
@@ -342,12 +361,23 @@ async def stream_startup_report(
         prev_context = f"\nANÁLISE ANTERIOR ({prev_date}): O veredito foi **{prev_verdict}**.\n"
         what_changed_section = f"## O QUE MUDOU DESDE {prev_date}\n[Compare com o veredito anterior ({prev_verdict}) e destaque mudanças: tração, time, mercado, funding, riscos novos]"
 
+    freshness_block = ""
+    if source_date_range and source_date_range.get("newest"):
+        dr = source_date_range
+        days = dr.get("days_since_newest", 0)
+        stale_warn = f" ⚠️ Fonte mais recente tem {days} dias — dados podem estar desatualizados." if days > 30 else ""
+        freshness_block = (
+            f"\n📅 JANELA DE DADOS: Fontes datadas de {dr['oldest']} a {dr['newest']} "
+            f"({dr.get('source_count_dated', 0)} fontes com data).{stale_warn}\n"
+            f"→ Mencione no 'Racional da confiança' se as fontes são recentes ou podem estar desatualizadas.\n"
+        )
+
     prompt = STARTUP_PROMPT.format(
         name=name,
         url=url or "não informado",
         thesis=thesis or "Sem tese específica — gere análise geral da startup",
         research=_format_research(results),
-        prev_context=prev_context,
+        prev_context=prev_context + freshness_block,
         what_changed_section=what_changed_section,
     )
 

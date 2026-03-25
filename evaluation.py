@@ -5,10 +5,11 @@ Heurísticas simples de avaliação de cobertura e evidências.
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 import re
 import json
 import os
+from datetime import datetime
 from urllib.parse import urlparse
 
 EQUITY_SECTIONS = ["financials", "valuation", "catalysts", "risks", "recent_news"]
@@ -290,6 +291,53 @@ def evaluate_results(mode: str, results: List[dict], company_domain: str | None 
         "primary_backed_sections": primary_backed_sections,
         "source_count": unique_count,
         "recency_score": recency_score,
+    }
+
+
+def compute_source_date_range(results: List[dict]) -> dict:
+    """Extract date range from sources with published_date field.
+
+    Returns dict with oldest/newest dates, days_since_newest, and freshness label.
+    freshness: 1.0=today, 0.9=week, 0.7=month, 0.4=quarter, 0.2=older
+    """
+    dates = []
+    for r in results:
+        pd = (r.get("published_date") or "")[:10]  # YYYY-MM-DD
+        if not pd or len(pd) < 10:
+            continue
+        try:
+            dates.append(datetime.strptime(pd, "%Y-%m-%d"))
+        except ValueError:
+            pass
+
+    if not dates:
+        return {}
+
+    now = datetime.utcnow()
+    newest = max(dates)
+    oldest = min(dates)
+    days_since_newest = max(0, (now - newest).days)
+    days_span = max(0, (newest - oldest).days)
+
+    if days_since_newest <= 1:
+        freshness, label = 1.0, "Hoje"
+    elif days_since_newest <= 7:
+        freshness, label = 0.9, "Esta semana"
+    elif days_since_newest <= 30:
+        freshness, label = 0.7, "Último mês"
+    elif days_since_newest <= 90:
+        freshness, label = 0.4, "Último trimestre"
+    else:
+        freshness, label = 0.2, "Desatualizado"
+
+    return {
+        "oldest": oldest.strftime("%d/%m/%Y"),
+        "newest": newest.strftime("%d/%m/%Y"),
+        "days_since_newest": days_since_newest,
+        "days_span": days_span,
+        "freshness": round(freshness, 2),
+        "freshness_label": label,
+        "source_count_dated": len(dates),
     }
 
 

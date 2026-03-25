@@ -12,7 +12,7 @@ from typing import AsyncGenerator, Tuple, List, Dict
 from researcher import search_topic, deduplicate_results, scrape_fundamentus, scrape_infomoney_news, scrape_bacen_macro, scrape_cvm_events
 from reporter import stream_equity_report, stream_startup_report, generate_critic_notes
 from equity_data import get_equity_data, format_market_data
-from evaluation import evaluate_results, build_followup_queries
+from evaluation import evaluate_results, build_followup_queries, compute_source_date_range
 from artifact import save_analysis_artifact
 
 
@@ -91,6 +91,11 @@ async def _collect_from_generator(gen: AsyncGenerator[Tuple[str, str], None]) ->
                 pass
         elif event == "artifact":
             data["artifact_path"] = payload
+        elif event == "source_date_range":
+            try:
+                data["source_date_range"] = json.loads(payload)
+            except Exception:
+                pass
     return data
 
 
@@ -257,8 +262,12 @@ async def run_equity_analysis(
     yield "status", "Sintetizando análise com Claude..."
 
     evidence_score = evaluation.get("evidence_score", 1.0)
+    source_date_range = compute_source_date_range(all_results)
+    if source_date_range:
+        yield "source_date_range", json.dumps(source_date_range, ensure_ascii=False)
+
     report_chunks = []
-    async for chunk in stream_equity_report(all_results, ticker, thesis, mandate, prev_verdict, prev_date, market_data, evidence_score=evidence_score):
+    async for chunk in stream_equity_report(all_results, ticker, thesis, mandate, prev_verdict, prev_date, market_data, evidence_score=evidence_score, source_date_range=source_date_range):
         report_chunks.append(chunk)
         yield "chunk", chunk
 
@@ -288,6 +297,7 @@ async def run_equity_analysis(
         "verdict": verdict_match.group(1) if verdict_match else "",
         "confidence": confidence_match.group(1) if confidence_match else "",
         "report": full_report,
+        "source_date_range": source_date_range,
         "generated_at": datetime.utcnow().isoformat() + "Z",
     })
     if artifact_path:
@@ -361,8 +371,12 @@ async def run_startup_analysis(
 
     yield "status", "Gerando VC memo com Claude..."
 
+    source_date_range = compute_source_date_range(all_results)
+    if source_date_range:
+        yield "source_date_range", json.dumps(source_date_range, ensure_ascii=False)
+
     report_chunks = []
-    async for chunk in stream_startup_report(all_results, name, url, thesis, prev_verdict, prev_date):
+    async for chunk in stream_startup_report(all_results, name, url, thesis, prev_verdict, prev_date, source_date_range=source_date_range):
         report_chunks.append(chunk)
         yield "chunk", chunk
 
@@ -388,6 +402,7 @@ async def run_startup_analysis(
         "verdict": verdict_match.group(1) if verdict_match else "",
         "confidence": confidence_match.group(1) if confidence_match else "",
         "report": full_report,
+        "source_date_range": source_date_range,
         "generated_at": datetime.utcnow().isoformat() + "Z",
     })
     if artifact_path:
