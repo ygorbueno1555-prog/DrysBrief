@@ -107,12 +107,36 @@ def _load_portfolio_history() -> list:
     return db.kv_get("portfolio_history", [])
 
 def _save_portfolio_history_entry(entry: dict):
+    import re
     from datetime import datetime, timezone
     history = _load_portfolio_history()
     history = [h for h in history if not (h.get("name") == entry["name"] and h.get("type") == entry["type"])]
     entry["date"] = datetime.now(timezone.utc).isoformat()
     history.insert(0, entry)
     db.kv_set("portfolio_history", history[:MAX_PORTFOLIO_HISTORY])
+
+    # Also save to main analyses table so "Ver análise completa" finds it
+    brief = entry.get("brief", "")
+    verdict_m = re.search(r'\*\*(INVESTIR|MONITORAR|PASSAR|COMPRAR|MANTER|REDUZIR|VENDER|TESE MANTIDA|TESE ALTERADA|TESE INVALIDADA)\*\*', brief)
+    confidence_m = re.search(r'Confiança:\s*\*?\*?([A-ZÁÉÍÓÚÃÕ]+)\*?\*?', brief)
+    verdict = verdict_m.group(1) if verdict_m else "PASSAR"
+    confidence = confidence_m.group(1) if confidence_m else ""
+    mode = "equity" if entry.get("type") == "equity" else "startup"
+    db.history_save({
+        "mode": mode,
+        "key": entry.get("name", ""),
+        "verdict": verdict,
+        "confidence": confidence,
+        "verdictColor": "",
+        "thesis": entry.get("thesis", ""),
+        "mandate": "",
+        "report": brief,
+        "sources": [],
+        "evaluation": {},
+        "queries": [],
+        "market_data": {},
+        "critic_notes": "",
+    })
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
