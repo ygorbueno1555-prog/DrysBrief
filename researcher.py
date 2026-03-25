@@ -166,6 +166,122 @@ def scrape_infomoney_news(ticker: str, max_results: int = 4) -> List[Dict]:
         return []
 
 
+# ── BACEN macroeconomic data ────────────────────────────────
+_BACEN_SERIES = {
+    "SELIC_meta":    432,
+    "IPCA_mensal":   433,
+    "IGPM_mensal":   189,
+    "USD_BRL_PTAX":  10813,
+    "TJLP":          256,
+}
+
+def scrape_bacen_macro() -> List[Dict]:
+    """Fetch key Brazilian macroeconomic indicators from BACEN open API."""
+    try:
+        import httpx
+        lines = []
+        for name, cod in _BACEN_SERIES.items():
+            try:
+                r = httpx.get(
+                    f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{cod}/dados/ultimos/1?formato=json",
+                    timeout=8
+                )
+                if r.status_code == 200:
+                    data = r.json()
+                    if data:
+                        lines.append(f"{name}: {data[-1]['valor']} ({data[-1]['data']})")
+            except Exception:
+                continue
+        if not lines:
+            return []
+        return [{
+            "title": "BACEN — Indicadores macroeconômicos Brasil",
+            "content": " | ".join(lines),
+            "url": "https://api.bcb.gov.br",
+            "query": "macro brasil",
+            "source_type": "financial",
+        }]
+    except Exception:
+        return []
+
+
+# ── CVM fatos relevantes ────────────────────────────────────
+_CVM_CAD_URL  = "https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv"
+_CVM_IPE_BASE = "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/IPE/DADOS/ipe_cia_aberta_{year}.zip"
+_cvm_cad_cache: dict = {}
+
+def _get_cvm_code(ticker: str) -> str | None:
+    """Map ticker to CVM company code from cadastro CSV."""
+    global _cvm_cad_cache
+    try:
+        import httpx
+        if not _cvm_cad_cache:
+            r = httpx.get(_CVM_CAD_URL, timeout=15)
+            text = r.content.decode("latin-1")
+            for line in text.split("\n")[1:]:
+                parts = line.split(";")
+                if len(parts) > 10:
+                    denom = parts[2].strip().upper()  # DENOM_COMERC
+                    cod   = parts[9].strip()           # CD_CVM
+                    if denom and cod:
+                        _cvm_cad_cache[denom] = cod
+        # Match by ticker prefix (e.g. VALE3 → VALE, PETR4 → PETR)
+        prefix = ticker.rstrip("0123456789F").upper()
+        for denom, cod in _cvm_cad_cache.items():
+            if prefix in denom:
+                return cod
+    except Exception:
+        pass
+    return None
+
+
+def scrape_cvm_events(ticker: str, max_results: int = 5) -> List[Dict]:
+    """Fetch recent material facts (fatos relevantes) from CVM open data."""
+    try:
+        import httpx, zipfile, io
+        from datetime import datetime
+        cod = _get_cvm_code(ticker)
+        if not cod:
+            return []
+        year = datetime.now().year
+        results = []
+        for y in [year, year - 1]:
+            url = _CVM_IPE_BASE.format(year=y)
+            r = httpx.get(url, timeout=15)
+            if r.status_code != 200:
+                continue
+            with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+                with z.open(z.namelist()[0]) as f:
+                    text = f.read().decode("latin-1")
+            for line in text.split("\n"):
+                if f";{cod};" not in line:
+                    continue
+                parts = line.split(";")
+                if len(parts) < 12:
+                    continue
+                categoria = parts[4].strip()
+                tipo      = parts[5].strip()
+                assunto   = parts[7].strip()
+                data      = parts[8].strip()
+                link      = parts[12].strip() if len(parts) > 12 else ""
+                if categoria.lower() in ("fato relevante", "comunicado ao mercado", "aviso aos acionistas") or "fato" in categoria.lower():
+                    title = f"{categoria} — {tipo}" + (f": {assunto}" if assunto else "")
+                    results.append({
+                        "title": title,
+                        "content": f"CVM {ticker} | {data} | {title}",
+                        "url": link,
+                        "query": ticker,
+                        "source_type": "regulatory",
+                    })
+                if len(results) >= max_results:
+                    break
+            if len(results) >= max_results:
+                break
+        return results
+    except Exception:
+        return []
+
+
 def _search_brave(query: str, max_results: int = 5) -> List[Dict]:
     try:
         import httpx

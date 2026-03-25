@@ -9,7 +9,7 @@ import re
 from datetime import datetime
 from typing import AsyncGenerator, Tuple, List, Dict
 
-from researcher import search_topic, deduplicate_results, scrape_fundamentus, scrape_infomoney_news
+from researcher import search_topic, deduplicate_results, scrape_fundamentus, scrape_infomoney_news, scrape_bacen_macro, scrape_cvm_events
 from reporter import stream_equity_report, stream_startup_report, generate_critic_notes
 from equity_data import get_equity_data, format_market_data
 from evaluation import evaluate_results, build_followup_queries
@@ -190,15 +190,17 @@ async def run_equity_analysis(
 
     yield "status", f"Coletando dados de mercado e pesquisando {len(queries)} fontes..."
     loop = asyncio.get_event_loop()
-    market_data, all_results, fundamentus_data, news_data = await asyncio.gather(
+    market_data, all_results, fundamentus_data, news_data, bacen_data, cvm_data = await asyncio.gather(
         get_equity_data(ticker),
         _run_queries_parallel(queries),
         loop.run_in_executor(None, scrape_fundamentus, ticker),
         loop.run_in_executor(None, scrape_infomoney_news, ticker),
+        loop.run_in_executor(None, scrape_bacen_macro),
+        loop.run_in_executor(None, scrape_cvm_events, ticker),
     )
 
-    # Inject scraped financial data at the front so Claude sees it first
-    all_results = fundamentus_data + news_data + all_results
+    # Inject structured data first so Claude prioritizes official sources
+    all_results = fundamentus_data + cvm_data + bacen_data + news_data + all_results
 
     if market_data:
         yield "market_data", json.dumps(market_data, ensure_ascii=False)
