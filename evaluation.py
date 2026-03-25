@@ -30,16 +30,62 @@ SECTION_KEYWORDS = {
 SECTIONS_REQUIRING_NUMBERS = {"financials", "valuation", "market", "traction"}
 
 PRIMARY_HINTS = [
-    "sec.gov",
-    "investor",
-    "/ir",
-    "relations",
-    "press",  # press releases
-    "annual report",
-    "10-k",
-    "10q",
-    "form 20-f",
+    # US regulatory / investor relations
+    "sec.gov", "investor", "/ir", "relations", "press",
+    "annual report", "10-k", "10q", "form 20-f",
+    # Brazilian official sources
+    "cvm.gov.br", "bcb.gov.br", "b3.com.br", "rad.cvm",
+    "dados.cvm", "fundamentus.com.br", "ri.", "relacoes-com-investidores",
+    "relações-com-investidores", "dadosabertos", "tesouro.gov.br",
 ]
+
+# Sector-specific conviction dimension weights for Score Alpha
+SECTOR_WEIGHTS: dict = {
+    "Energy":              {"valuation": 0.20, "resultado_recente": 0.25, "macro_setor": 0.30, "execucao_gestao": 0.15, "catalise_proxima": 0.10},
+    "Basic Materials":     {"valuation": 0.20, "resultado_recente": 0.20, "macro_setor": 0.35, "execucao_gestao": 0.15, "catalise_proxima": 0.10},
+    "Financial Services":  {"valuation": 0.30, "resultado_recente": 0.30, "macro_setor": 0.15, "execucao_gestao": 0.15, "catalise_proxima": 0.10},
+    "Technology":          {"valuation": 0.25, "resultado_recente": 0.20, "macro_setor": 0.10, "execucao_gestao": 0.30, "catalise_proxima": 0.15},
+    "Consumer Cyclical":   {"valuation": 0.25, "resultado_recente": 0.25, "macro_setor": 0.20, "execucao_gestao": 0.20, "catalise_proxima": 0.10},
+    "Industrials":         {"valuation": 0.25, "resultado_recente": 0.25, "macro_setor": 0.20, "execucao_gestao": 0.20, "catalise_proxima": 0.10},
+    "startup":             {"valuation": 0.15, "resultado_recente": 0.20, "macro_setor": 0.10, "execucao_gestao": 0.35, "catalise_proxima": 0.20},
+    "default":             {"valuation": 0.25, "resultado_recente": 0.25, "macro_setor": 0.20, "execucao_gestao": 0.20, "catalise_proxima": 0.10},
+}
+
+
+def compute_score_alpha(breakdown: dict, evidence_score: float, sector: str = "") -> dict:
+    """Compute Score Alpha (0-100) from conviction breakdown + evidence quality.
+
+    evidence_multiplier = 0.5 + 0.5 * evidence_score
+    → weak evidence (0.3) caps max score at 65; strong evidence (1.0) allows 100.
+    """
+    if not breakdown:
+        return {"score": 0, "label": "N/A", "evidence_multiplier": 0.0, "weights": {}}
+
+    weights = SECTOR_WEIGHTS.get(sector, SECTOR_WEIGHTS["default"])
+    raw = sum(
+        breakdown.get(dim, {}).get("score", 0) * w
+        for dim, w in weights.items()
+    )
+    evidence_multiplier = 0.5 + 0.5 * max(0.0, min(1.0, evidence_score))
+    score = round(raw * evidence_multiplier)
+    score = max(0, min(100, score))
+
+    if score >= 75:
+        label = "FORTE"
+    elif score >= 55:
+        label = "MODERADA"
+    elif score >= 35:
+        label = "FRACA"
+    else:
+        label = "INSUFICIENTE"
+
+    return {
+        "score": score,
+        "label": label,
+        "raw_conviction": round(raw),
+        "evidence_multiplier": round(evidence_multiplier, 2),
+        "weights": weights,
+    }
 
 MARKETING_HINTS = ["blog", "templates", "pricing", "product", "landing", "marketing", "about", "careers"]
 

@@ -191,22 +191,29 @@ async def generate_devil(artifact: Dict) -> str:
 
 
 async def generate_conviction_breakdown(artifact: Dict) -> Dict:
-    """Score the thesis across 5 investment dimensions (Haiku for speed)."""
+    """Score the thesis across 5 investment dimensions (Haiku for speed) + Score Alpha."""
+    from evaluation import compute_score_alpha
+    import re as _re
+
     try:
         client, model = _get_client_and_model()
     except ValueError as e:
         return {"error": str(e)}
 
     context = _build_context(artifact)
+    sector  = (artifact.get("market_data") or {}).get("sector", "")
+    mode    = artifact.get("mode", "equity")
+    if mode == "startup":
+        sector = "startup"
 
     prompt = f"""
-Com base nesta análise:
+Com base nesta análise de {sector or 'empresa'}:
 
 {context[:2500]}
 
 ---
-Gere um breakdown de convicção em 5 dimensões. Para cada dimensão, dê uma pontuação de 0 a 100 \
-e uma justificativa de 1 frase.
+Gere um breakdown de convicção em 5 dimensões considerando o setor "{sector or 'geral'}". \
+Para cada dimensão, dê uma pontuação de 0 a 100 baseada nos dados concretos encontrados e uma justificativa de 1 frase com dado específico.
 
 Responda APENAS com JSON válido neste formato exato:
 {{
@@ -218,6 +225,7 @@ Responda APENAS com JSON válido neste formato exato:
 }}
 """
 
+    breakdown = {}
     try:
         msg = await client.messages.create(
             model="claude-haiku-4-5-20251001",
@@ -226,10 +234,16 @@ Responda APENAS com JSON válido neste formato exato:
             messages=[{"role": "user", "content": prompt}],
         )
         text = msg.content[0].text.strip()
-        import re
-        match = re.search(r'\{.*\}', text, re.DOTALL)
+        match = _re.search(r'\{.*\}', text, re.DOTALL)
         if match:
-            return json.loads(match.group())
+            breakdown = json.loads(match.group())
     except Exception:
         pass
-    return {}
+
+    if not breakdown:
+        return {}
+
+    evidence_score = (artifact.get("evaluation") or {}).get("evidence_score", 0.7)
+    score_alpha    = compute_score_alpha(breakdown, evidence_score, sector)
+
+    return {"breakdown": breakdown, "score_alpha": score_alpha}

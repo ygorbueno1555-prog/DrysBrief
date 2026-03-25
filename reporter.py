@@ -254,6 +254,7 @@ async def stream_equity_report(
     prev_verdict: str = "",
     prev_date: str = "",
     market_data: Optional[dict] = None,
+    evidence_score: float = 1.0,
 ) -> AsyncGenerator[str, None]:
     try:
         client = _get_client()
@@ -276,6 +277,14 @@ async def stream_equity_report(
         if formatted:
             market_data_section = formatted + "\n\n"
 
+    # Evidence guardrail — prevents Claude from overriding quality signals
+    if evidence_score < 0.45:
+        evidence_guardrail = "\n⚠️ QUALIDADE DE EVIDÊNCIA BAIXA (score {:.2f}): use obrigatoriamente Confiança: BAIXA e mencione limitações dos dados.\n".format(evidence_score)
+    elif evidence_score < 0.65:
+        evidence_guardrail = "\n⚠️ QUALIDADE DE EVIDÊNCIA MODERADA (score {:.2f}): Confiança ALTA só é permitida se ao menos 3 seções têm fontes primárias. Caso contrário use MÉDIA.\n".format(evidence_score)
+    else:
+        evidence_guardrail = ""
+
     prompt = EQUITY_PROMPT.format(
         ticker=ticker,
         thesis=thesis or "Sem tese específica — gere análise geral do ativo",
@@ -283,7 +292,7 @@ async def stream_equity_report(
         research=_format_research(results),
         prev_context=prev_context,
         what_changed_section=what_changed_section,
-        market_data_section=market_data_section,
+        market_data_section=market_data_section + evidence_guardrail,
     )
 
     mode = _use_ollama_mode()

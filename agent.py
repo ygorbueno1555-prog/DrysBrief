@@ -256,8 +256,9 @@ async def run_equity_analysis(
 
     yield "status", "Sintetizando análise com Claude..."
 
+    evidence_score = evaluation.get("evidence_score", 1.0)
     report_chunks = []
-    async for chunk in stream_equity_report(all_results, ticker, thesis, mandate, prev_verdict, prev_date, market_data):
+    async for chunk in stream_equity_report(all_results, ticker, thesis, mandate, prev_verdict, prev_date, market_data, evidence_score=evidence_score):
         report_chunks.append(chunk)
         yield "chunk", chunk
 

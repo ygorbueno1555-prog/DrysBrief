@@ -309,7 +309,8 @@ async function toggleConviction() {
     }
 
     const data = await res.json();
-    const breakdown = data.breakdown;
+    const breakdown = data.breakdown || data; // backwards compat
+    const scoreAlpha = data.score_alpha;
 
     const LABELS = {
       valuation:         'Valuation',
@@ -319,7 +320,27 @@ async function toggleConviction() {
       catalise_proxima:  'Catalisador Próximo',
     };
 
-    convictionBars.innerHTML = Object.entries(breakdown).map(([key, val]) => {
+    const alphaHtml = scoreAlpha ? (() => {
+      const s = scoreAlpha.score;
+      const color = s >= 75 ? '#4ade80' : s >= 55 ? '#fbbf24' : s >= 35 ? '#f97316' : '#f87171';
+      const evPct = Math.round((scoreAlpha.evidence_multiplier || 0) * 100);
+      return `
+        <div style="display:flex;align-items:center;gap:1rem;padding:.75rem 1rem;background:#0d0d0d;border-radius:8px;margin-bottom:.75rem;border:1px solid #222;">
+          <div style="text-align:center;min-width:56px">
+            <div style="font-size:1.8rem;font-weight:800;color:${color};line-height:1">${s}</div>
+            <div style="font-size:.65rem;color:#555;margin-top:2px">SCORE ALPHA</div>
+          </div>
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:.85rem;color:${color}">${scoreAlpha.label}</div>
+            <div style="font-size:.72rem;color:#555;margin-top:3px">Convicção bruta: ${scoreAlpha.raw_conviction} × evidência ${evPct}%</div>
+            <div style="background:#1a1a1a;height:4px;border-radius:2px;margin-top:6px">
+              <div style="background:${color};height:4px;border-radius:2px;width:${s}%;transition:width .4s"></div>
+            </div>
+          </div>
+        </div>`;
+    })() : '';
+
+    convictionBars.innerHTML = alphaHtml + Object.entries(breakdown).map(([key, val]) => {
       const score = val.score || 0;
       const color = score >= 75 ? 'green' : score >= 50 ? 'amber' : 'red';
       return `
