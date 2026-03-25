@@ -99,24 +99,32 @@ def search_topic(query: str, max_results: int = 5) -> List[Dict]:
         _cache_set(query, results)
         return results
     except Exception as e:
-        # Fallback to DuckDuckGo when Tavily fails (e.g. quota/rate limit)
-        return _search_duckduckgo(query, max_results)
+        return _search_brave(query, max_results)
 
 
-def _search_duckduckgo(query: str, max_results: int = 5) -> List[Dict]:
+def _search_brave(query: str, max_results: int = 5) -> List[Dict]:
     try:
-        from duckduckgo_search import DDGS
-        with DDGS() as ddgs:
-            raw = list(ddgs.text(query, max_results=max_results))
+        import httpx
+        api_key = os.environ.get("BRAVE_SEARCH_API_KEY", "")
+        if not api_key:
+            return [{"title": "Sem fonte de pesquisa", "content": "Configure BRAVE_SEARCH_API_KEY ou renove TAVILY_API_KEY", "url": "", "query": query, "source_type": "error"}]
+        resp = httpx.get(
+            "https://api.search.brave.com/res/v1/web/search",
+            params={"q": query, "count": max_results, "search_lang": "pt", "country": "BR"},
+            headers={"Accept": "application/json", "X-Subscription-Token": api_key},
+            timeout=15.0
+        )
+        resp.raise_for_status()
+        data = resp.json()
         results = [
             {
                 "title": r.get("title", ""),
-                "content": r.get("body", "")[:600],
-                "url": r.get("href", ""),
+                "content": (r.get("description") or "")[:600],
+                "url": r.get("url", ""),
                 "query": query,
-                "source_type": _infer_source_type(r.get("href", "")),
+                "source_type": _infer_source_type(r.get("url", "")),
             }
-            for r in raw
+            for r in data.get("web", {}).get("results", [])
         ]
         _cache_set(query, results)
         return results
