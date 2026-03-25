@@ -378,8 +378,50 @@ async function loadEvolution() {
   }).join('');
 }
 
+function renderResultCards(entries) {
+  const grid = document.getElementById('results-grid');
+  if (!entries || !entries.length) { grid.innerHTML = ''; return; }
+  grid.innerHTML = entries.map(e => {
+    const verdictMatch = (e.brief || '').match(/\*\*([A-ZÇÃÕÊÉÁÍ\s]+)\*\*/);
+    const verdictRaw = verdictMatch ? verdictMatch[1].trim() : '';
+    const verdictClass = {
+      'TESE MANTIDA': 'verdict-mantida', 'TESE ALTERADA': 'verdict-alterada', 'TESE INVALIDADA': 'verdict-invalidada',
+      'INVESTIR': 'verdict-investir', 'MONITORAR': 'verdict-monitorar', 'PASSAR': 'verdict-passar',
+      'COMPRAR': 'verdict-comprar', 'MANTER': 'verdict-manter', 'REDUZIR': 'verdict-reduzir', 'VENDER': 'verdict-vender',
+    }[verdictRaw] || '';
+    const openUrl = e.type === 'equity'
+      ? `/?ticker=${encodeURIComponent(e.name)}`
+      : `/?startup=${encodeURIComponent(e.name)}&url=${encodeURIComponent(e.url||'')}`;
+    return `<div class="result-card">
+      <div class="result-header">
+        <span class="result-name">${e.name}</span>
+        ${verdictRaw ? `<span class="verdict-badge ${verdictClass}">${verdictRaw}</span>` : ''}
+      </div>
+      <div class="result-brief">${marked.parse(e.brief || '')}</div>
+      <button class="btn-open" onclick="window.location='${openUrl}'" data-tooltip="Abre a análise completa com veredito, riscos, catalisadores e fontes">Ver análise completa →</button>
+    </div>`;
+  }).join('');
+}
+
+async function loadLastResults() {
+  try {
+    const r = await fetch('/api/portfolio/history');
+    const entries = await r.json();
+    if (!entries.length) return;
+    // Show only the most recent result per company (first occurrence of each name)
+    const seen = new Set();
+    const latest = entries.filter(e => {
+      if (seen.has(e.name)) return false;
+      seen.add(e.name);
+      return true;
+    });
+    renderResultCards(latest);
+  } catch {}
+}
+
 // ── Init ──
 loadPortfolio();
+loadLastResults();
 </script>
 </body>
 </html>
