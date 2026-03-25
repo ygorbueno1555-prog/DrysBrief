@@ -200,9 +200,17 @@ function startAnalysis(url, label) {
       );
     }
 
-    // Show Debate button once analysis is complete
+    // Show Debate button with correct context for the current analysis
     const debateBtn = document.getElementById('btn-debate');
-    if (debateBtn && key) debateBtn.style.display = 'inline-flex';
+    if (debateBtn && key) {
+      debateBtn.style.display = 'inline-flex';
+      debateBtn._entry = {
+        mode, key,
+        verdict: verdictTag.textContent,
+        confidence,
+        ...extras,
+      };
+    }
   });
 
   currentES.addEventListener('error', e => {
