@@ -593,6 +593,32 @@ async function historyInit() {
     historyCache = [];
   }
   renderHistoryPanel();
+  _openFromUrlParams();
+}
+
+function _openFromUrlParams() {
+  const p = new URLSearchParams(window.location.search);
+  const ticker  = p.get('ticker');
+  const startup = p.get('startup');
+  const url     = p.get('url') || '';
+
+  if (ticker) {
+    const entry = historyFind('equity', ticker);
+    if (entry) {
+      historyOpen(ticker, 'equity');
+    } else {
+      $('ticker').value = ticker;
+    }
+  } else if (startup) {
+    const entry = historyFind('startup', startup);
+    if (entry) {
+      historyOpen(startup, 'startup');
+    } else {
+      document.querySelector('.mode-tab[data-mode="startup"]')?.click();
+      $('startup-name').value = startup;
+      $('startup-url').value  = url;
+    }
+  }
 }
 
 function historyLoad() {
