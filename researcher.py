@@ -99,4 +99,26 @@ def search_topic(query: str, max_results: int = 5) -> List[Dict]:
         _cache_set(query, results)
         return results
     except Exception as e:
+        # Fallback to DuckDuckGo when Tavily fails (e.g. quota/rate limit)
+        return _search_duckduckgo(query, max_results)
+
+
+def _search_duckduckgo(query: str, max_results: int = 5) -> List[Dict]:
+    try:
+        from duckduckgo_search import DDGS
+        with DDGS() as ddgs:
+            raw = list(ddgs.text(query, max_results=max_results))
+        results = [
+            {
+                "title": r.get("title", ""),
+                "content": r.get("body", "")[:600],
+                "url": r.get("href", ""),
+                "query": query,
+                "source_type": _infer_source_type(r.get("href", "")),
+            }
+            for r in raw
+        ]
+        _cache_set(query, results)
+        return results
+    except Exception as e:
         return [{"title": "Erro na pesquisa", "content": str(e), "url": "", "query": query, "source_type": "error"}]
