@@ -102,6 +102,70 @@ def search_topic(query: str, max_results: int = 5) -> List[Dict]:
         return _search_brave(query, max_results)
 
 
+def scrape_fundamentus(ticker: str) -> List[Dict]:
+    """Scrape fundamental indicators from Fundamentus for Brazilian equities."""
+    try:
+        import httpx, re
+        ticker = ticker.upper().strip()
+        url = f"https://www.fundamentus.com.br/detalhes.php?papel={ticker}"
+        r = httpx.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10, follow_redirects=True)
+        if r.status_code != 200:
+            return []
+        rows = re.findall(r'<td[^>]*>(.*?)</td>', r.text, re.DOTALL)
+        rows = [re.sub(r'<[^>]+>', '', row).strip() for row in rows if re.sub(r'<[^>]+>', '', row).strip()]
+        pairs = {}
+        i = 0
+        while i < len(rows) - 1:
+            k = rows[i].replace('?', '').strip()
+            v = rows[i + 1].strip()
+            if k and len(k) < 60 and not k.startswith('Oscil') and not k.startswith('Nenhum'):
+                pairs[k] = v
+            i += 2
+        if not pairs:
+            return []
+        content = " | ".join(f"{k}: {v}" for k, v in pairs.items() if v and k not in ("Papel", "Empresa"))
+        return [{
+            "title": f"Fundamentus — {ticker} indicadores fundamentalistas",
+            "content": content[:1200],
+            "url": url,
+            "query": ticker,
+            "source_type": "financial",
+        }]
+    except Exception:
+        return []
+
+
+def scrape_infomoney_news(ticker: str, max_results: int = 4) -> List[Dict]:
+    """Scrape recent news from InfoMoney for a given ticker."""
+    try:
+        import httpx, re
+        url = f"https://www.infomoney.com.br/{ticker.lower()}/"
+        r = httpx.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10, follow_redirects=True)
+        if r.status_code != 200:
+            return []
+        # Extract article titles and links
+        items = re.findall(r'<h[23][^>]*>.*?<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', r.text, re.DOTALL)
+        results = []
+        seen = set()
+        for href, title in items[:max_results * 2]:
+            title = re.sub(r'<[^>]+>', '', title).strip()
+            if not title or title in seen or len(title) < 10:
+                continue
+            seen.add(title)
+            results.append({
+                "title": title,
+                "content": f"Notícia recente sobre {ticker} — {title}",
+                "url": href if href.startswith("http") else f"https://www.infomoney.com.br{href}",
+                "query": ticker,
+                "source_type": "news",
+            })
+            if len(results) >= max_results:
+                break
+        return results
+    except Exception:
+        return []
+
+
 def _search_brave(query: str, max_results: int = 5) -> List[Dict]:
     try:
         import httpx
