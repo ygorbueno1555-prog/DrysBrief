@@ -59,6 +59,7 @@ function openChatDrawer(mode, key, verdict, confidence) {
   convictionPanel.style.display = 'none';
   convictionBars.innerHTML = '';
 
+  renderHistorySelector(mode, key);
   renderSuggestions(mode);
 
   chatDrawer.classList.add('open');
@@ -68,6 +69,35 @@ function openChatDrawer(mode, key, verdict, confidence) {
 
   // Auto-trigger Devil's Advocate on open
   setTimeout(() => triggerDevil(true), 300);
+}
+
+function renderHistorySelector(currentMode, currentKey) {
+  let sel = document.getElementById('chat-history-selector');
+  if (!sel) return;
+  const history = window.historyCache || [];
+  if (!history.length) { sel.style.display = 'none'; return; }
+
+  const recent = history.slice(0, 10);
+  sel.innerHTML = recent.map(e =>
+    `<option value="${e.mode}|${e.key}" ${e.mode === currentMode && e.key === currentKey ? 'selected' : ''}>${e.key} (${e.verdict || '?'})</option>`
+  ).join('');
+  sel.style.display = '';
+
+  sel.onchange = () => {
+    const [m, k] = sel.value.split('|');
+    const entry = history.find(e => e.mode === m && e.key === k);
+    if (!entry) return;
+    chatMode = m;
+    chatKey  = k;
+    chatHistory = [];
+    devilLoaded = false;
+    chatDrawerLabel.textContent   = k;
+    chatDrawerVerdict.textContent = entry.verdict ? `${entry.verdict} · Confiança: ${entry.confidence || ''}` : '';
+    chatDrawerVerdict.className   = 'chat-drawer-verdict ' + verdictColorClass(entry.verdict);
+    chatMessages.innerHTML = '';
+    renderSuggestions(m);
+    setTimeout(() => triggerDevil(true), 100);
+  };
 }
 
 function closeChatDrawer() {
@@ -356,13 +386,23 @@ if (verdictTagEl && btnDebateEl) {
 }
 
 btnDebateEl.addEventListener('click', () => {
-  // Read current analysis state from app.js globals (mode, key, verdict)
-  const mode    = window.currentMode || 'equity';
-  const ticker  = document.getElementById('ticker')?.value?.trim()?.toUpperCase() || '';
-  const startup = document.getElementById('startup-name')?.value?.trim() || '';
-  const key     = mode === 'equity' ? ticker : startup;
-  const verdict = verdictTagEl?.textContent || '';
-  const confMatch = document.getElementById('verdict-meta')?.textContent || '';
+  // Prefer stored entry from showCachedReport, fallback to live state
+  const stored = btnDebateEl._entry;
+  let mode, key, verdict, confMatch;
+
+  if (stored) {
+    mode      = stored.mode || 'equity';
+    key       = stored.key || '';
+    verdict   = stored.verdict || '';
+    confMatch = stored.confidence ? `Confiança: ${stored.confidence}` : '';
+  } else {
+    mode      = window.currentMode || 'equity';
+    const ticker  = document.getElementById('ticker')?.value?.trim()?.toUpperCase() || '';
+    const startup = document.getElementById('startup-name')?.value?.trim() || '';
+    key       = mode === 'equity' ? ticker : startup;
+    verdict   = verdictTagEl?.textContent || '';
+    confMatch = document.getElementById('verdict-meta')?.textContent || '';
+  }
 
   if (!key) return;
   openChatDrawer(mode, key, verdict, confMatch);

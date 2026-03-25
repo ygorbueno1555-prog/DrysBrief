@@ -995,6 +995,13 @@ function showCachedReport(entry, showHint = false) {
   sourcesMap              = entry.sources || [];
   renderBlocks(entry.report, true);
   if (showHint) showCacheHint(entry);
+
+  // Show debate button with correct context
+  const debateBtn = document.getElementById('btn-debate');
+  if (debateBtn && entry.key) {
+    debateBtn.style.display = 'inline-flex';
+    debateBtn._entry = entry; // store for chat.js to use
+  }
 }
 
 function showCacheHint(entry) {
