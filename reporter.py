@@ -168,7 +168,7 @@ def _get_client() -> AsyncAnthropic:
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         raise ValueError("ANTHROPIC_API_KEY não configurada")
-    return AsyncAnthropic(api_key=api_key)
+    return AsyncAnthropic(api_key=api_key, timeout=30.0)
 
 
 def _get_model() -> str:
